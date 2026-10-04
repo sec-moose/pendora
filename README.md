@@ -1,5 +1,8 @@
 # Pendora <img src="assets/logo.svg" width="34" height="34" alt="Pendora" style="vertical-align: middle;" />
+🌐 **Official Website**: [https://pendora.tech](https://pendora.tech) &nbsp;|&nbsp; ❓ **FAQ**: [https://pendora.tech/#faq](https://pendora.tech/#faq)
 
+[![Website](https://img.shields.io/badge/Website-pendora.tech-51A2DA?style=flat-square&logo=firefox&logoColor=white)](https://pendora.tech/)
+[![FAQ](https://img.shields.io/badge/FAQ-pendora.tech%2F%23faq-blue?style=flat-square)](https://pendora.tech/#faq)
 [![Fedora](https://img.shields.io/badge/Fedora-51A2DA?style=flat-square&logo=fedora&logoColor=white)](https://fedoraproject.org/)
 [![Bash](https://img.shields.io/badge/Bash-4EAA25?style=flat-square&logo=gnubash&logoColor=white)](https://www.gnu.org/software/bash/)
 [![Lua](https://img.shields.io/badge/Lua-2C2D72?style=flat-square&logo=lua&logoColor=white)](https://www.lua.org/)
@@ -17,7 +20,7 @@
 > * **AI-Assisted Development**: Artificial intelligence (AI) has been utilized for parts of this project, including code generation, deployment scripts, configuration templates, and documentation.  
 > * **Third-Party & Vendor Scripts**: Certain upstream modules fetch and execute installation scripts directly from official vendor sources (notably SysReptor's installer at [`https://docs.sysreptor.com/install.sh`](https://docs.sysreptor.com/install.sh)). Users are strongly encouraged to inspect and read through all scripts thoroughly before executing them.  
 > * **Use Entirely at Your Own Risk**: This project is provided "as is" without warranty of any kind. The creator assumes no responsibility or liability for third-party scripts, remote downloads, system misconfigurations, or data loss resulting from the use of this repository. By using, cloning, or running this project, you explicitly acknowledge and accept this.
-**Pendora** is a modular installation framework and configuration template designed to transform a standard **Fedora Linux** installation into a penetration testing and security assessment virtual machine.
+**Pendora** ([pendora.tech](https://pendora.tech)) is a modular installation framework and configuration template designed to transform a standard **Fedora Linux** installation into a penetration testing and security assessment virtual machine.
 
 It brings the toolset, workflows, and aesthetics of Kali Linux to Fedora's modern ecosystem (Wayland, RPM/DNF, systemd) using a modular, human-editable list structure.
 
@@ -45,7 +48,7 @@ Pendora organizes tooling, services, and configuration into four dedicated tiers
 3. **Standalone Upstreams & Containers (`upstreams/`)**: Vendor installers, git clones, and Docker containers for enterprise suites (`metasploit`, `burpsuite`, `seclists`, `evil-winrm`, `zap`, `hack-font`, `rustscan`, `naabu`, `portainer`, `sysreptor`, `bloodhound`, `devtunnel`, `responder`).
 4. **Interactive Shell Environment (`zsh/`)**: Interactive Zsh configuration with autosuggestions, syntax highlighting, and pentesting aliases.
 
-> 📖 **Tool Quick-Reference Guide**: For common startup commands, usage examples, keybindings, and dashboard URLs for every tool in this repository, see [assets/TOOL_REFERENCE.md](assets/TOOL_REFERENCE.md).
+> 📖 **Reference & Roadmap**: For common startup commands, usage examples, keybindings, and dashboard URLs for every tool, see the [Tool Reference Guide](assets/TOOL_REFERENCE.md). For common questions and answers, check the [Official FAQ](https://pendora.tech/#faq). To track upcoming features, tool additions, and planned upgrades, see [TODO.md](TODO.md).
 ---
 
 ## Desktop Choice: Retain GNOME or Deploy Sway
@@ -117,6 +120,7 @@ The scripts and package templates in this project are designed, tested, and vali
 pendora/
 ├── install.sh                  # Central orchestrator and deployment script
 ├── README.md                   # Project documentation
+├── TODO.md                     # Project roadmap, planned tools & upgrades
 ├── pkg-lists/                  # Plain-text native DNF package lists
 │   ├── 00-base.list            # System environment, compilers, stow, zsh, tmux, pipx
 │   ├── 10-networking.list      # Port scanners, DNS enumeration, sniffers, VPN, routing
@@ -297,3 +301,5 @@ sudo reboot
   * **Window Rescaling**: Dynamically dragging or rescaling the virtual machine viewer window does not resize the desktop session in full (session operates at configured 1080p).
   * **Host-to-VM Clipboard Sharing (Resolved & Verified)**: Bidirectional copy-paste between host and guest operates out of the box via the integrated `sway-spice-clipboard-bridge` service and `spice-vdagent -x`.  
   > 💡 **Tip**: If dynamic display auto-rescaling on window drag is required for a specific workflow, you can simply select **GNOME** on the login screen (GDM), where SPICE guest agent display auto-configuration is natively supported.
+
+> 📌 **Project Roadmap**: For upcoming feature additions, tool expansions, and installer improvements, check [TODO.md](TODO.md).
