@@ -27,6 +27,9 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
   - Source: [https://github.com/p0dalirius/coercer](https://github.com/p0dalirius/coercer)
 - [ ] **Programming Language Libraries**:
   - Common development and offensive tooling libraries/headers across primary languages.
+- [ ] **Oh My Pi (omp)**:
+  - Terminal AI coding agent with IDE tooling and shell integration.
+  - Source: [https://github.com/can1357/oh-my-pi](https://github.com/can1357/oh-my-pi) (`https://omp.sh/install`)
 
 ---
 
