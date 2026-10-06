@@ -10,8 +10,10 @@ This directory contains deployment scripts and documentation for security tools,
 | **Burp Suite** | PortSwigger Linux Installer | GUI (`burpsuite`) | Web application security testing and interception proxy |
 | **SecLists** | GitHub Git Clone | `/usr/share/wordlists/seclists` | Security tester's companion wordlists & dictionaries |
 | **Evil-WinRM** | RubyGem (`gem install`) | CLI (`evil-winrm`) | Ultimate WinRM shell for Windows penetration testing |
-| **OWASP ZAP** | Flathub Flatpak | GUI (`zaproxy`) | Open source web application vulnerability scanner |
+| **OWASP ZAP** | Flathub Flatpak | GUI (`zap`) | Open source web application vulnerability scanner |
 | **Hack Nerd Font** | GitHub Release (`ryanoasis/nerd-fonts`) | System Fonts | Monospace font with full icons for terminal & prompt |
+| **RustScan** | GitHub Release (`bee-san/RustScan`) | CLI (`/usr/local/bin/rustscan`) | Ultra-fast 65k-port scanner piped directly to Nmap |
+| **Naabu** | GitHub Release (`projectdiscovery/naabu`) | CLI (`/usr/local/bin/naabu`) | Fast TCP SYN/CONNECT port scanner (ProjectDiscovery) |
 | **Portainer CE** | Docker Container | `https://localhost:7999` | Container management web interface |
 | **SysReptor** | Docker Compose Installer | `http://localhost:8000` | Pentest reporting and finding documentation platform |
 | **BloodHound CE** | Docker Compose (`ghst.ly/getbhce`) | `http://localhost:8080` | Active Directory attack path analysis & visualization (Portainer manageable) |

@@ -17,7 +17,7 @@ import threading
 import time
 
 # Singleton lock: prevent duplicate processes
-lock_path = f"/tmp/sway-spice-clipboard-bridge-{os.getuid()}.lock"
+lock_path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}", "sway-spice-clipboard-bridge.lock")
 try:
     lock_file = open(lock_path, "w")
     fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)

@@ -18,8 +18,6 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **Arp-scan** | `sudo arp-scan --localnet` | Identify alive hosts on local Ethernet/WiFi |
 | **Dnsenum** | `dnsenum --enum target.com` | Comprehensive DNS enumeration & subdomains |
 | **Hping3** | `sudo hping3 -S -p 80 -c 5 <target>` | Custom TCP/IP packet assembler and tester |
-| **RustScan** | `rustscan -a <target> -- -A -sC` | Ultra-fast port discovery piped directly to Nmap |
-| **Naabu** | `naabu -host <target> -p -` | Fast TCP SYN/CONNECT port scanner (ProjectDiscovery) |
 
 ---
 

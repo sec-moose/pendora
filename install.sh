@@ -159,6 +159,7 @@ list_categories() {
     echo "  - rustscan     (RustScan ultra-fast 65k-port scanner binary in /usr/local/bin)"
     echo "  - naabu        (Naabu fast port scanner by ProjectDiscovery in /usr/local/bin)"
     echo "  - portainer    (Portainer Community Edition UI on port 7999)"
+    echo "  - sysreptor    (SysReptor CE pentest reporting platform via Docker on port 8000)"
     echo "  - bloodhound   (BloodHound Community Edition on port 8080 - Portainer manageable)"
     echo "  - devtunnel    (Microsoft Dev Tunnels CLI for secure port forwarding)"
     echo "  - responder    (Responder LLMNR/NBT-NS/mDNS poisoner in /opt/responder)"
@@ -183,13 +184,18 @@ run_pipx_install() {
         log_warn "No pipx tools listed in ${PIPX_DIR}."
         return 0
     fi
-    if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] pipx ensurepath"
-    else
-        if ! command -v pipx &>/dev/null; then
+    # Ensure pipx is available (mirrored in dry-run so the plan stays truthful)
+    if ! command -v pipx &>/dev/null; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] sudo dnf install -y pipx"
+        else
             log_info "pipx command not found. Installing pipx via dnf..."
             sudo dnf install -y pipx
         fi
+    fi
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] pipx ensurepath"
+    else
         pipx ensurepath 2>/dev/null || true
     fi
 
@@ -212,19 +218,22 @@ run_pipx_install() {
     local pipx_bin_dir="${target_home}/.local/bin"
 
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] Create Impacket convenience symlinks (impacket-* and non-.py aliases in ~/.local/bin)"
+        echo "  [DRY-RUN] Create impacket-* convenience symlinks in ~/.local/bin (impacket- prefix only; stale bare aliases removed)"
         echo "  [DRY-RUN] Deploy central /usr/local/bin/impacket CLI launcher"
     else
         if [ -d "$pipx_bin_dir" ]; then
-            log_info "Configuring Impacket convenience symlinks (impacket-* and non-.py) in $pipx_bin_dir..."
+            log_info "Configuring Impacket convenience symlinks (impacket- prefix only) in $pipx_bin_dir..."
             for script in "$pipx_bin_dir"/*.py; do
                 [ -f "$script" ] || continue
                 local base_name
                 base_name="$(basename "$script" .py)"
-                # e.g. secretsdump -> secretsdump.py
-                [ ! -e "${pipx_bin_dir}/${base_name}" ] && ln -sf "$script" "${pipx_bin_dir}/${base_name}"
-                # e.g. impacket-secretsdump -> secretsdump.py
+                # Only create impacket- prefixed aliases (e.g. impacket-secretsdump -> secretsdump.py);
+                # bare aliases shadowed system tools (impacket's ping.py used to hijack system ping)
                 [ ! -e "${pipx_bin_dir}/impacket-${base_name}" ] && ln -sf "$script" "${pipx_bin_dir}/impacket-${base_name}"
+                # Remove stale bare aliases created by older Pendora runs
+                if [ -L "${pipx_bin_dir}/${base_name}" ] && [ -f "${pipx_bin_dir}/${base_name}.py" ] && [ -e "${pipx_bin_dir}/impacket-${base_name}" ]; then
+                    rm -f "${pipx_bin_dir}/${base_name}"
+                fi
             done
             if [ -n "${SUDO_USER:-}" ]; then
                 chown -h "${target_user}:${target_user}" "${pipx_bin_dir}"/* 2>/dev/null || true
@@ -333,15 +342,19 @@ stow_module() {
         return 0
     fi
 
+    # Ensure GNU Stow is installed (mirrored in dry-run so the plan stays truthful)
+    if ! command -v stow &>/dev/null; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] sudo dnf install -y stow"
+        else
+            log_info "stow command not found. Installing stow via dnf..."
+            sudo dnf install -y stow || true
+        fi
+    fi
+
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] stow -d '$SCRIPT_DIR' -t '$target_home' -R '$module'"
         return 0
-    fi
-
-    # Ensure GNU Stow is installed
-    if ! command -v stow &>/dev/null; then
-        log_info "stow command not found. Installing stow via dnf..."
-        sudo dnf install -y stow || true
     fi
 
     log_info "Applying ${BOLD}${module}${NC} dotfiles via GNU Stow into $target_home..."
@@ -382,14 +395,18 @@ stow_module() {
     esac
 
     # Execute stow as the target user to ensure proper symlink ownership
+    local stow_rc=0
     if [ -n "${SUDO_USER:-}" ] && [ "$EUID" -eq 0 ]; then
-        sudo -u "$target_user" stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" 2>/dev/null || \
-        sudo -u "$target_user" stow -d "$SCRIPT_DIR" -t "$target_home" --adopt "$module" 2>/dev/null || true
+        sudo -u "$target_user" stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" || stow_rc=$?
     else
-        stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" 2>/dev/null || \
-        stow -d "$SCRIPT_DIR" -t "$target_home" --adopt "$module" 2>/dev/null || true
+        stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" || stow_rc=$?
     fi
-    log_success "Stowed module '${module}' successfully (symlinks in $target_home)."
+    if [ "$stow_rc" -eq 0 ]; then
+        log_success "Stowed module '${module}' successfully (symlinks in $target_home)."
+    else
+        log_error "Failed to stow module '${module}' (rc=${stow_rc}); resolve conflicts in $target_home and re-run."
+        return 1
+    fi
 }
 
 ensure_hack_nerd_font() {
@@ -416,9 +433,13 @@ deploy_zsh_config() {
 
     ensure_hack_nerd_font
 
-    if ! command -v zsh &>/dev/null && [ "$DRY_RUN" = false ]; then
-        log_info "zsh not found. Installing zsh packages via dnf..."
-        sudo dnf install -y zsh zsh-autosuggestions zsh-syntax-highlighting || true
+    if ! command -v zsh &>/dev/null; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] sudo dnf install -y zsh zsh-autosuggestions zsh-syntax-highlighting"
+        else
+            log_info "zsh not found. Installing zsh packages via dnf..."
+            sudo dnf install -y zsh zsh-autosuggestions zsh-syntax-highlighting || true
+        fi
     fi
 
     stow_module "zsh"
@@ -487,81 +508,7 @@ deploy_sway_config() {
     ensure_hack_nerd_font
     stow_module "sway"
 
-    local target_user="${SUDO_USER:-$USER}"
-    local target_home
-    target_home="$(getent passwd "$target_user" 2>/dev/null | cut -d: -f6)"
-    [ -z "$target_home" ] && target_home="$HOME"
-
-    # Detect GNOME & system keyboard layout to match user's pre-existing choice
-    local sources=""
-    local layouts=()
-    local variants=()
-
-    if [ -n "${SUDO_USER:-}" ]; then
-        sources="$(sudo -u "$target_user" gsettings get org.gnome.desktop.input-sources sources 2>/dev/null || true)"
-    fi
-    if [ -z "$sources" ] && command -v gsettings &>/dev/null; then
-        sources="$(gsettings get org.gnome.desktop.input-sources sources 2>/dev/null || true)"
-    fi
-
-    local x11_layout=""
-    local x11_variant=""
-    if [ -z "$sources" ] || [ "$sources" = "@a(ss) []" ]; then
-        if command -v localectl &>/dev/null; then
-            x11_layout="$(localectl status 2>/dev/null | awk -F: '/X11 Layout/ {gsub(/^[ \t]+/, "", $2); print $2}')"
-            x11_variant="$(localectl status 2>/dev/null | awk -F: '/X11 Variant/ {gsub(/^[ \t]+/, "", $2); print $2}')"
-        fi
-        if [ -z "$x11_layout" ] && [ -f /etc/vconsole.conf ]; then
-            x11_layout="$(grep '^KEYMAP=' /etc/vconsole.conf 2>/dev/null | cut -d= -f2 | tr -d '"'"'" || true)"
-        fi
-    fi
-
-    if [ -n "$sources" ] && [ "$sources" != "@a(ss) []" ]; then
-        for item in $(echo "$sources" | grep -oP "'xkb',\s*'\K[^']+"); do
-            [ -z "$item" ] && continue
-            if [[ "$item" == *"+"* ]]; then
-                layouts+=("${item%%+*}")
-                variants+=("${item#*+}")
-            else
-                layouts+=("$item")
-                variants+=("")
-            fi
-        done
-    fi
-
-    local final_layout=""
-    local final_variant=""
-    if [ ${#layouts[@]} -gt 0 ]; then
-        final_layout="$(IFS=,; echo "${layouts[*]}")"
-        final_variant="$(IFS=,; echo "${variants[*]}")"
-    elif [ -n "$x11_layout" ]; then
-        final_layout="$x11_layout"
-        final_variant="$x11_variant"
-    else
-        final_layout="us"
-    fi
-
-    local config_d="${target_home}/.config/sway/config.d"
-    local kb_conf="${config_d}/keyboard.conf"
-
-    if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] Detect GNOME/system keyboard layout: $final_layout (variant: ${final_variant:-none})"
-        echo "  [DRY-RUN] Write $kb_conf with xkb_layout \"$final_layout\""
-    else
-        mkdir -p "$config_d"
-        cat > "$kb_conf" <<EOF
-# Automatically detected from GNOME/system settings
-input type:keyboard {
-    xkb_layout "${final_layout}"
-$( [ -n "$final_variant" ] && echo "    xkb_variant \"${final_variant}\"" )
-$( [[ "$final_layout" == *","* ]] && echo "    xkb_options \"grp:alt_shift_toggle\"" )
-}
-EOF
-        if [ -n "${SUDO_USER:-}" ]; then
-            chown -R "${target_user}:${target_user}" "$config_d" 2>/dev/null || true
-        fi
-        log_success "Configured Sway keyboard layout to: ${BOLD}${final_layout}${NC} (from GNOME/system)"
-    fi
+    log_info "Keyboard layout is applied at session start by apply-gnome-keyboard-layout.sh."
 }
 
 deploy_alacritty_config() {
@@ -569,11 +516,20 @@ deploy_alacritty_config() {
     echo -e "${BOLD}Deploying Alacritty Configuration (GNU Stow)${NC}"
     echo "===================================================="
     ensure_hack_nerd_font
-    if [ "$DRY_RUN" = false ]; then
-        if ! command -v alacritty &>/dev/null; then
+    if ! command -v alacritty &>/dev/null; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] sudo dnf install -y alacritty"
+        else
             log_info "alacritty not found. Installing alacritty via dnf..."
             sudo dnf install -y alacritty || true
         fi
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] sudo dnf install -y zsh (required by alacritty.toml shell)"
+    elif ! command -v zsh &>/dev/null; then
+        log_info "zsh not found but required by alacritty config. Installing zsh via dnf..."
+        sudo dnf install -y zsh || true
     fi
     stow_module "alacritty"
 }
@@ -582,8 +538,10 @@ deploy_nvim_config() {
     echo
     echo -e "${BOLD}Deploying Neovim / LazyVim Configuration (GNU Stow)${NC}"
     echo "===================================================="
-    if [ "$DRY_RUN" = false ]; then
-        if ! command -v nvim &>/dev/null; then
+    if ! command -v nvim &>/dev/null; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] sudo dnf install -y neovim"
+        else
             log_info "neovim not found. Installing neovim via dnf..."
             sudo dnf install -y neovim || true
         fi
@@ -939,6 +897,14 @@ if [ "$RUN_PACKAGES" = true ]; then
         done
     fi
 
+    # Ensure Docker packages are included whenever container deployment was requested
+    if [ "$INSTALL_DOCKER_CONTAINERS" = true ] && [ "$RUN_BASIC" = false ] && [ "$RUN_ALL" = false ]; then
+        case " ${TARGET_FILES[*]-} " in
+            *"60-docker"*) ;;
+            *) [ -f "${LISTS_DIR}/60-docker.list" ] && TARGET_FILES+=("${LISTS_DIR}/60-docker.list") ;;
+        esac
+    fi
+
     ALL_PACKAGES=()
 
     echo -e "${BOLD}Pendora - Native DNF Package Plan${NC}"
@@ -962,7 +928,9 @@ if [ "$RUN_PACKAGES" = true ]; then
     log_info "Total native DNF packages to process: ${BOLD}${#ALL_PACKAGES[@]}${NC}"
 
 
-    if [ "$DRY_RUN" = true ]; then
+    if [ ${#ALL_PACKAGES[@]} -eq 0 ]; then
+        log_warn "No packages resolved from the selected lists; skipping DNF install."
+    elif [ "$DRY_RUN" = true ]; then
         log_info "Dry run requested. Planned DNF command:"
         echo
         echo "sudo dnf install ${ASSUME_YES} ${ALL_PACKAGES[*]}"
@@ -1003,11 +971,6 @@ if [ "$RUN_PACKAGES" = true ]; then
     done
 fi
 
-# Configure screensharing systemd target if Sway is requested
-if [ "$INSTALL_SWAY" = true ]; then
-    configure_screensharing_systemd
-fi
-
 # Run Pipx section if requested
 if [ "$INSTALL_PIPX" = true ]; then
     run_pipx_install
@@ -1026,6 +989,11 @@ fi
 # Deploy Sway configuration if requested
 if [ "$INSTALL_SWAY" = true ]; then
     deploy_sway_config
+fi
+
+# Configure screensharing systemd target after Sway dotfiles are deployed
+if [ "$INSTALL_SWAY" = true ]; then
+    configure_screensharing_systemd
 fi
 
 # Deploy Alacritty configuration if requested

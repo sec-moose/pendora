@@ -51,6 +51,7 @@ ${BOLD}Available Upstream Tools:${NC}
   rustscan        RustScan modern 65k-port scanner (via GitHub release -> /usr/local/bin/rustscan)
   naabu           Naabu fast port scanner (via ProjectDiscovery -> /usr/local/bin/naabu)
   portainer       Portainer Community Edition (management UI container on port 7999)
+  sysreptor       SysReptor CE pentest reporting platform (via Docker Compose on port 8000)
   bloodhound      BloodHound Community Edition (via Docker Compose on port 8080)
   devtunnel       Microsoft Dev Tunnels CLI (secure tunneling to localhost)
   responder       Responder LLMNR/NBT-NS/mDNS poisoner (via lgandx GitHub + venv)
@@ -65,7 +66,9 @@ EOF
 
 install_metasploit() {
     log_info "Installing Metasploit Framework via Rapid7 omnibus installer..."
-    local cmd="curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb -o /tmp/msfinstall && chmod 755 /tmp/msfinstall && sudo /tmp/msfinstall"
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+    local cmd="curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb -o '$tmp_dir/msfinstall' && chmod 755 '$tmp_dir/msfinstall' && sudo '$tmp_dir/msfinstall'; rc=\$?; rm -rf '$tmp_dir'; exit \$rc"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] $cmd"
     else
@@ -77,8 +80,10 @@ install_metasploit() {
 install_burpsuite() {
     log_info "Downloading Burp Suite Community Edition installer..."
     local installer_url="https://portswigger.net/burp/releases/download?product=community&type=linux"
-    local dest="/tmp/burpsuite_community.sh"
-    local varfile="/tmp/burp_response.varfile"
+    local dest
+    dest="$(mktemp)"
+    local varfile
+    varfile="$(mktemp)"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] curl -fsSL '$installer_url' -o '$dest' && chmod +x '$dest'"
         echo "  [DRY-RUN] sudo '$dest' -q -dir /opt/BurpSuiteCommunity -overwrite -varfile '$varfile'"
@@ -118,7 +123,7 @@ install_seclists() {
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p /usr/share/wordlists"
         echo "  [DRY-RUN] sudo git clone --depth 1 https://github.com/danielmiessler/SecLists.git $target_dir"
-        echo "  [DRY-RUN] sudo gzip -d -k /usr/share/wordlists/seclists/Passwords/Leaked-Databases/rockyou.txt.tar.gz 2>/dev/null || true"
+        echo "  [DRY-RUN] sudo tar -xzf $target_dir/Passwords/Leaked-Databases/rockyou.txt.tar.gz -C $target_dir/Passwords/Leaked-Databases/"
     else
         sudo mkdir -p /usr/share/wordlists
         if [ -d "$target_dir/.git" ]; then
@@ -225,15 +230,19 @@ install_portainer() {
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p /opt/portainer"
         echo "  [DRY-RUN] sudo docker volume create portainer_data"
-        echo "  [DRY-RUN] sudo docker run -d -p 7999:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest"
+        echo "  [DRY-RUN] sudo docker run -d -p 127.0.0.1:7999:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest"
         echo "  [DRY-RUN] Extract setup_token from container logs"
         echo "  [DRY-RUN] Display setup token banner and prompt user to copy before continuing"
         echo "  [DRY-RUN] Web interface: https://localhost:7999"
     else
         ensure_docker_ready || return 1
 
-        # If Portainer container is already running, show setup banner and skip re-deployment
-        if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^portainer"; then
+        # If Portainer container already exists, start it if stopped, show setup banner and skip re-deployment
+        if sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^portainer$"; then
+            if ! sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^portainer$"; then
+                log_info "Portainer container exists but is stopped. Starting it..."
+                sudo docker start portainer
+            fi
             log_success "Portainer CE container is already running! Web interface: https://localhost:7999"
             local existing_token=""
             if [ -f "$creds_file" ]; then
@@ -263,7 +272,7 @@ install_portainer() {
         sudo docker volume create portainer_data 2>/dev/null || true
         log_info "Deploying Portainer CE container..."
         sudo docker run -d \
-            -p 7999:9443 \
+            -p 127.0.0.1:7999:9443 \
             --name portainer \
             --restart=always \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -285,6 +294,7 @@ Username:     admin
 Setup Token:  ${setup_token}
 Note:         Initial setup must be completed within 5 minutes of first launch.
 EOF
+        sudo chmod 600 "$creds_file"
 
         echo
         echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -304,7 +314,8 @@ EOF
 install_sysreptor() {
     log_info "Configuring Docker and deploying SysReptor pentest reporting platform..."
     local install_dir="/opt/sysreptor"
-    local installer_script="/tmp/sysreptor_install.sh"
+    local installer_script
+    installer_script="$(mktemp)"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p '$install_dir'"
         echo "  [DRY-RUN] sed -i 's/read -p \"Copy your password.*/CONFIRM=\"y\"/g' '$installer_script'"
@@ -363,6 +374,7 @@ install_sysreptor() {
                 CONFIRM_AUTOUPDATE="n" \
                 bash "$installer_script"
         ) 2>&1 | sudo tee "$creds_file"
+        sudo chmod 600 "$creds_file"
 
         # Cleanup temporary installer script
         rm -f "$installer_script"
@@ -456,6 +468,7 @@ Web URL:   http://localhost:8080
 Username:  admin
 Password:  ${parsed_pw}
 EOF
+        sudo chmod 600 "$creds_file"
 
         echo
         echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -479,11 +492,14 @@ install_devtunnel() {
     local dest="/usr/local/bin/devtunnel"
     local download_url="https://aka.ms/TunnelsCliDownload/linux-x64"
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] sudo curl -fL --progress-bar '$download_url' -o '$dest' && sudo chmod +x '$dest'"
+        echo "  [DRY-RUN] curl -fL --progress-bar '$download_url' -o <mktemp dir>/devtunnel && sudo install -m 755 <tmp>/devtunnel '$dest'"
     else
         log_info "Downloading devtunnel binary (~60 MB)..."
-        sudo curl -fL --progress-bar "$download_url" -o "$dest"
-        sudo chmod +x "$dest"
+        local tmp_dir
+        tmp_dir="$(mktemp -d)"
+        curl -fsSL --progress-bar "$download_url" -o "$tmp_dir/devtunnel"
+        sudo install -m 755 "$tmp_dir/devtunnel" "$dest"
+        rm -rf "$tmp_dir"
         log_success "Microsoft Dev Tunnels installed to $dest"
     fi
 }
@@ -533,12 +549,14 @@ install_rustscan() {
         echo "  [DRY-RUN] sudo install -m 755 rustscan '$dest'"
     else
         mkdir -p "$temp_dir"
+        trap 'rm -rf "$temp_dir"' EXIT
         log_info "Downloading RustScan release archive..."
         curl -fsSL "$download_url" -o "$temp_dir/rustscan.zip"
         unzip -q -o "$temp_dir/rustscan.zip" -d "$temp_dir"
         tar -xzf "$temp_dir/x86_64-linux-rustscan.tar.gz" -C "$temp_dir"
         sudo install -m 755 "$temp_dir/rustscan" "$dest"
         rm -rf "$temp_dir"
+        trap - EXIT
         log_success "RustScan installed successfully to $dest"
     fi
 }
@@ -554,11 +572,13 @@ install_naabu() {
         echo "  [DRY-RUN] sudo install -m 755 naabu '$dest'"
     else
         mkdir -p "$temp_dir"
+        trap 'rm -rf "$temp_dir"' EXIT
         log_info "Downloading Naabu release archive..."
         curl -fsSL "$download_url" -o "$temp_dir/naabu.zip"
         unzip -q -o "$temp_dir/naabu.zip" naabu -d "$temp_dir"
         sudo install -m 755 "$temp_dir/naabu" "$dest"
         rm -rf "$temp_dir"
+        trap - EXIT
         log_success "Naabu installed successfully to $dest"
     fi
 }
