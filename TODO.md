@@ -11,6 +11,8 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
   - Ensure Portainer runs reliably alongside SysReptor and BloodHound CE.
 - [ ] **Sway VM Display Auto-Rescaling**:
   - Investigate dynamic display rescaling on window drag under QEMU/SPICE virtual machines (currently defaults to fixed 1080p).
+- [ ] **Impacket `ping` PATH Collision**:
+  - Impacket's pipx install symlinks raw-socket `ping` and `ping6` into `~/.local/bin/`, shadowing system ping when `~/.local/bin` is first in PATH. Add post-install cleanup or `.zshrc` alias.
 
 ---
 

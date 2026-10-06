@@ -67,7 +67,7 @@ ${BOLD}Options:${NC}
   -u, --upstreams          Run standalone upstream installers (Metasploit, Burp, SecLists, etc.)
   -D, --docker, --containers Install Docker engine and deploy container stacks (Portainer, SysReptor, BloodHound)
   -z, --zsh                Deploy Kali-styled .zshrc configuration
-  -W, --sway, --hyprland   Install Sway tiling desktop stack, Noctalia shell, Zsh, Neovim, Alacritty & wallpapers
+  -W, --sway               Install Sway tiling desktop stack, Noctalia shell, Zsh, Neovim, Alacritty & wallpapers
   -T, --alacritty          Deploy Alacritty terminal configuration & Catppuccin Macchiato theme
   -N, --nvim               Deploy Neovim/LazyVim configuration & Catppuccin Macchiato theme
   -H, --hostname           Set system hostname to 'pendora'
@@ -356,7 +356,7 @@ stow_module() {
                 mv "$target_home/.zshrc" "$zsh_bak"
             fi
             ;;
-        sway|hyprland)
+        sway)
             for d in sway hypr noctalia; do
                 if [ -d "$target_home/.config/$d" ] && [ ! -L "$target_home/.config/$d" ]; then
                     local d_bak="$target_home/.config/${d}.bak.$(date +%Y%m%d_%H%M%S)"
@@ -822,7 +822,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_SWAY=false
             shift
             ;;
-        -W|--sway|--hyprland)
+        -W|--sway)
             INSTALL_SWAY=true
             INSTALL_WALLPAPER=true
             INSTALL_ZSH=true
