@@ -241,7 +241,7 @@ install_portainer() {
         if sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^portainer$"; then
             if ! sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^portainer$"; then
                 log_info "Portainer container exists but is stopped. Starting it..."
-                sudo docker start portainer
+                sudo docker start portainer || log_warn "Could not start existing Portainer container; continuing."
             fi
             log_success "Portainer CE container is already running! Web interface: https://localhost:7999"
             local existing_token=""

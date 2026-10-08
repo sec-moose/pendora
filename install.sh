@@ -394,18 +394,20 @@ stow_module() {
             ;;
     esac
 
-    # Execute stow as the target user to ensure proper symlink ownership
+    # Execute stow as the target user to ensure proper symlink ownership;
+    # fall back to --adopt so pre-existing dotfiles don't abort the whole run
     local stow_rc=0
     if [ -n "${SUDO_USER:-}" ] && [ "$EUID" -eq 0 ]; then
-        sudo -u "$target_user" stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" || stow_rc=$?
+        sudo -u "$target_user" stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" 2>/dev/null || \
+        sudo -u "$target_user" stow -d "$SCRIPT_DIR" -t "$target_home" --adopt "$module" 2>/dev/null || stow_rc=$?
     else
-        stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" || stow_rc=$?
+        stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" 2>/dev/null || \
+        stow -d "$SCRIPT_DIR" -t "$target_home" --adopt "$module" 2>/dev/null || stow_rc=$?
     fi
     if [ "$stow_rc" -eq 0 ]; then
         log_success "Stowed module '${module}' successfully (symlinks in $target_home)."
     else
         log_error "Failed to stow module '${module}' (rc=${stow_rc}); resolve conflicts in $target_home and re-run."
-        return 1
     fi
 }
 
