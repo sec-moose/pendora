@@ -288,7 +288,7 @@ install_portainer() {
         done
         [ -z "$setup_token" ] && setup_token="Check 'sudo docker logs portainer' for setup_token"
 
-        sudo tee "$creds_file" >/dev/null <<EOF
+        sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the Setup Token above is still valid."
 Web URL:      https://localhost:7999
 Username:     admin
 Setup Token:  ${setup_token}
@@ -409,9 +409,8 @@ install_bloodhound() {
     local creds_file="${install_dir}/admin_credentials.txt"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p '$install_dir'"
-        echo "  [DRY-RUN] sudo curl -sSL https://ghst.ly/getbhce -o '$install_dir/docker-compose.yml'"
-        echo "  [DRY-RUN] sudo sed -i '/image:/a \\    restart: always' '$install_dir/docker-compose.yml'"
-        echo "  [DRY-RUN] cd '$install_dir' && sudo docker compose up -d"
+        echo "  [DRY-RUN] Download bloodhound-cli-linux-amd64 from SpecterOps GitHub releases to '$install_dir'"
+        echo "  [DRY-RUN] cd '$install_dir' && printf 'n\\n\\n' | sudo ./bloodhound-cli install"
         echo "  [DRY-RUN] Display credentials banner and prompt user to copy before continuing"
         echo "  [DRY-RUN] BloodHound CE interface will be accessible at: http://localhost:8080"
         echo "  [DRY-RUN] Stack and volumes fully manageable in Portainer at: https://localhost:7999"
@@ -427,7 +426,7 @@ install_bloodhound() {
             sudo docker update --restart=always $(sudo docker ps -q --filter "name=graph-db") 2>/dev/null || true
             if [ -f "$creds_file" ]; then
                 local existing_pw
-                existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
+                existing_pw=$(awk '/with this password: /{sub(/.*with this password: /,""); print; exit} /^Password:[[:space:]]+/{sub(/^Password:[[:space:]]+/,""); print; exit}' "$creds_file" 2>/dev/null | tr -d '\r\n' || true)
                 if [ -n "$existing_pw" ]; then
                     echo
                     echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -447,44 +446,51 @@ install_bloodhound() {
         fi
 
         sudo mkdir -p "$install_dir"
-        log_info "Downloading official BloodHound CE docker-compose.yml to $install_dir..."
-        sudo curl -sSL --retry 3 --retry-delay 2 --retry-all-errors https://ghst.ly/getbhce -o "$install_dir/docker-compose.yml"
-        # Ensure all BloodHound CE services auto-start on system boot
-        sudo sed -i '/image:/a \    restart: always' "$install_dir/docker-compose.yml"
-        log_info "Starting BloodHound CE stack via docker compose..."
-        local compose_rc=1
+        log_info "Downloading BloodHound CLI from official SpecterOps releases..."
+        (
+            cd "$install_dir"
+            sudo curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o bhcli.tar.gz \
+                https://github.com/SpecterOps/bloodhound-cli/releases/latest/download/bloodhound-cli-linux-amd64.tar.gz
+            sudo tar -xzf bhcli.tar.gz
+            sudo rm -f bhcli.tar.gz
+            sudo chmod +x bloodhound-cli
+        ) || { log_error "BloodHound CLI download failed; skipping BloodHound CE deployment."; return 0; }
+        log_info "Installing BloodHound CE via bloodhound-cli (image pulls may take a few minutes)..."
+        local install_rc=1
         local attempt
         for attempt in 1 2 3; do
-            if (cd "$install_dir" && sudo docker compose up -d); then
-                compose_rc=0
+            if (cd "$install_dir" && ( yes n 2>/dev/null; true ) | sudo ./bloodhound-cli install) 2>&1 | sudo tee "$creds_file"; then
+                install_rc=0
                 break
             fi
             if [ "$attempt" -lt 3 ]; then
-                log_warn "docker compose up failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
+                log_warn "bloodhound-cli install failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
                 sleep 5
             fi
         done
-        if [ "$compose_rc" -ne 0 ]; then
-            log_error "BloodHound CE deployment failed after 3 attempts (image pull network error). Check connectivity, then re-run 'pendora containers', or deploy manually: cd $install_dir && sudo docker compose up -d"
+        if [ "$install_rc" -ne 0 ]; then
+            log_error "BloodHound CE deployment failed after 3 attempts (image pull network error). Check connectivity, then re-run 'pendora containers', or deploy manually: cd $install_dir && sudo ./bloodhound-cli install"
             return 0
         fi
-        log_info "Waiting for BloodHound CE container to initialize..."
-        local raw_pw_line=""
-        local parsed_pw=""
-        for _ in {1..15}; do
-            raw_pw_line=$(cd "$install_dir" && sudo docker compose logs bloodhound 2>/dev/null | grep -i "initial password" | tail -n 1 || true)
-            if [ -n "$raw_pw_line" ]; then
-                parsed_pw=$(echo "$raw_pw_line" | sed -E 's/.*(Initial Password Set To:|initial password is:?)[[:space:]]*//I' | tr -d '\r\n')
-                [ -n "$parsed_pw" ] && break
-            fi
-            sleep 2
-        done
-        [ -z "$parsed_pw" ] && parsed_pw="Run 'cd $install_dir && sudo docker compose logs bloodhound' to view"
+        sudo chmod 600 "$creds_file" || log_warn "Could not restrict permissions on $creds_file (sudo may require re-authentication); run 'sudo chmod 600 $creds_file' manually."
+
+        # Ensure the stack restarts on boot (the CLI compose file defines no restart policy)
+        sudo docker update --restart=always $(sudo docker ps -q --filter "name=bloodhound") 2>/dev/null || true
+        sudo docker update --restart=always $(sudo docker ps -q --filter "name=app-db") 2>/dev/null || true
+        sudo docker update --restart=always $(sudo docker ps -q --filter "name=graph-db") 2>/dev/null || true
+
+        # Parse credentials from the bloodhound-cli install output
+        local parsed_user
+        parsed_user=$(grep -oE 'log in as `[^`]+`' "$creds_file" 2>/dev/null | head -n 1 | sed -E 's/.*`([^`]+)`.*/\1/' | tr -d '\r\n' || true)
+        [ -z "$parsed_user" ] && parsed_user="admin"
+        local parsed_pw
+        parsed_pw=$(grep -E "with this password: " "$creds_file" 2>/dev/null | tail -n 1 | sed -E 's/.*with this password: //' | tr -d '\r\n' || true)
+        [ -z "$parsed_pw" ] && parsed_pw="Run 'cd $install_dir && sudo ./bloodhound-cli config get default_password' to view"
 
         # Save credentials to /opt/bloodhound/admin_credentials.txt
-        sudo tee "$creds_file" >/dev/null <<EOF
+        sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the credentials above are still valid."
 Web URL:   http://localhost:8080
-Username:  admin
+Username:  ${parsed_user}
 Password:  ${parsed_pw}
 EOF
         sudo chmod 600 "$creds_file" || log_warn "Could not restrict permissions on $creds_file (sudo may require re-authentication); run 'sudo chmod 600 $creds_file' manually."
@@ -494,7 +500,7 @@ EOF
         echo -e "${GREEN}${BOLD}BloodHound CE Credentials${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC}"
-        echo -e "  Username:  ${BOLD}admin${NC}"
+        echo -e "  Username:  ${BOLD}${parsed_user}${NC}"
         echo -e "  Password:  ${BOLD}${parsed_pw}${NC}"
         echo -e "  Saved to:  ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: You must change this password on first login!${NC}"
