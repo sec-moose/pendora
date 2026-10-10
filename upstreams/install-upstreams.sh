@@ -229,9 +229,8 @@ install_portainer() {
     local creds_file="/opt/portainer/admin_setup.txt"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p /opt/portainer"
-        echo "  [DRY-RUN] sudo docker volume create portainer_data"
-        echo "  [DRY-RUN] sudo docker pull portainer/portainer-ce:lts"
-        echo "  [DRY-RUN] sudo docker run -d -p 9443:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:lts"
+        echo "  [DRY-RUN] Write portainer-compose.yaml (image portainer/portainer-ce:lts, ports 9443:9443, Edge Agent port 8000 commented out)"
+        echo "  [DRY-RUN] cd /opt/portainer && sudo docker compose -f portainer-compose.yaml up -d"
         echo "  [DRY-RUN] Extract setup_token from container logs"
         echo "  [DRY-RUN] Display setup token banner and prompt user to copy before continuing"
         echo "  [DRY-RUN] Web interface: https://localhost:9443"
@@ -269,33 +268,45 @@ install_portainer() {
         fi
 
         sudo mkdir -p /opt/portainer
-        log_info "Creating portainer_data volume..."
-        sudo docker volume create portainer_data 2>/dev/null || true
-        log_info "Pulling Portainer CE image (portainer/portainer-ce:lts)..."
-        local pull_rc=1
+        log_info "Writing portainer-compose.yaml to /opt/portainer..."
+        sudo tee /opt/portainer/portainer-compose.yaml >/dev/null <<'EOF' || { log_error "Could not write /opt/portainer/portainer-compose.yaml."; return 0; }
+services:
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:lts
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    ports:
+      - 9443:9443
+      # - 8000:8000  # Remove if you do not intend to use Edge Agents
+
+volumes:
+  portainer_data:
+    name: portainer_data
+
+networks:
+  default:
+    name: portainer_network
+EOF
+        log_info "Deploying Portainer CE via docker compose..."
+        local compose_rc=1
         local attempt
         for attempt in 1 2 3; do
-            if sudo docker pull portainer/portainer-ce:lts; then
-                pull_rc=0
+            if (cd /opt/portainer && sudo docker compose -f portainer-compose.yaml up -d); then
+                compose_rc=0
                 break
             fi
             if [ "$attempt" -lt 3 ]; then
-                log_warn "Portainer image pull failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
+                log_warn "Portainer deployment failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
                 sleep 5
             fi
         done
-        if [ "$pull_rc" -ne 0 ]; then
-            log_error "Portainer image pull failed after 3 attempts (Docker Hub network error). Check connectivity and re-run 'pendora containers'."
+        if [ "$compose_rc" -ne 0 ]; then
+            log_error "Portainer deployment failed after 3 attempts (Docker Hub network error). Check connectivity and re-run 'pendora containers', or deploy manually: cd /opt/portainer && sudo docker compose -f portainer-compose.yaml up -d"
             return 0
         fi
-        log_info "Deploying Portainer CE container..."
-        sudo docker run -d \
-            -p 9443:9443 \
-            --name portainer \
-            --restart=always \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v portainer_data:/data \
-            portainer/portainer-ce:lts || { log_error "Portainer container failed to start despite a successful pull; re-run 'pendora containers'."; return 0; }
 
         log_info "Waiting for Portainer CE container to initialize and generate setup token..."
         local setup_token=""
