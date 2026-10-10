@@ -309,7 +309,7 @@ install_portainer() {
     local creds_file="/opt/portainer/admin_setup.txt"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p /opt/portainer"
-        echo "  [DRY-RUN] Write portainer-compose.yaml (lts image, 9443:9443; socket relabeled :z when SELinux is Enforcing)"
+        echo "  [DRY-RUN] Write portainer-compose.yaml (lts image, 9443:9443; security_opt label:disable when SELinux is Enforcing)"
         echo "  [DRY-RUN] cd /opt/portainer && sudo docker compose -f portainer-compose.yaml up -d"
         echo "  [DRY-RUN] Test: socket mounted, UI on https://localhost:9443, version printed, env-connection errors checked"
         echo "  [DRY-RUN] Extract setup_token from container logs"
@@ -325,7 +325,7 @@ install_portainer() {
                 sudo docker start portainer || log_warn "Could not start existing Portainer container; continuing."
             fi
             log_success "Portainer CE container is already running! Web interface: https://localhost:9443"
-            # Rewrite the compose file (picks up SELinux :z etc.) and refresh to the current lts digest.
+            # Rewrite the compose file (picks up label:disable under SELinux etc.) and refresh to the current lts digest.
             # A foreign (non-compose) container makes 'up -d' fail on the name; the running one is kept then.
             portainer_write_compose_file || true
             if sudo docker compose -f /opt/portainer/portainer-compose.yaml pull 2>/dev/null; then
@@ -439,14 +439,17 @@ install_sysreptor() {
                 log_success "SysReptor container stack is already running! Web interface: http://localhost:8000"
             else
                 log_info "SysReptor stack exists but is stopped - starting it..."
+                local start_rc=0
                 if [ -f /opt/sysreptor/sysreptor/deploy/docker-compose.yml ]; then
-                    (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d) 2>/dev/null \
-                        || log_warn "Could not start the SysReptor stack; start it via Portainer or: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d"
+                    (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d) 2>/dev/null || start_rc=1
                 else
-                    sudo docker start $(sudo docker ps -aq --filter "name=sysreptor") 2>/dev/null \
-                        || log_warn "Could not start the existing SysReptor containers; start them via Portainer."
+                    sudo docker start $(sudo docker ps -aq --filter "name=sysreptor") 2>/dev/null || start_rc=1
                 fi
-                log_success "SysReptor container stack started! Web interface: http://localhost:8000"
+                if [ "$start_rc" -eq 0 ]; then
+                    log_success "SysReptor container stack started! Web interface: http://localhost:8000"
+                else
+                    log_warn "Could not start the SysReptor stack; start it via Portainer or: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d"
+                fi
             fi
             local existing_pw
             existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
@@ -535,31 +538,45 @@ install_bloodhound() {
     else
         ensure_docker_ready || return 1
 
-        # If BloodHound container stack is already running, show credentials if available and skip re-installation
-        if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^bloodhound"; then
-            log_success "BloodHound CE container stack is already running! Web interface: http://localhost:8080"
-            # No restart policy is enforced: the stack intentionally does not auto-start after reboot.
-            # Start it via Portainer or: cd /opt/bloodhound && sudo docker compose up -d
-            log_info "BloodHound CE container status:"
-            sudo docker ps -a --filter "name=bloodhound" --format '  {{.Names}}: {{.Status}}' 2>/dev/null || true
-            if [ -f "$creds_file" ]; then
-                local existing_pw
-                existing_pw=$(awk '/with this password: /{sub(/.*with this password: /,""); print; exit} /^Password:[[:space:]]+/{sub(/^Password:[[:space:]]+/,""); print; exit}' "$creds_file" 2>/dev/null | tr -d '\r\n' || true)
-                if [ -n "$existing_pw" ]; then
-                    echo
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo -e "${GREEN}${BOLD}BloodHound CE Credentials${NC}"
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC}"
-                    echo -e "  Username:  ${BOLD}admin${NC}"
-                    echo -e "  Password:  ${BOLD}${existing_pw}${NC}"
-                    echo -e "  Saved to:  ${creds_file}"
-                    echo -e "${YELLOW}  ⚠️  REMINDER: You must change this password on first login!${NC}"
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo
-                    read -rp "Please copy your username and password above. Press [Enter] to continue: " _
+        # If a BloodHound stack already exists (running or stopped - it intentionally does not auto-start
+        # after reboot), start it and show the saved credentials instead of re-deploying: re-deploying
+        # rewrites bloodhound.config.json with a NEW random password while the existing volumes keep the
+        # original one, which would lock the operator out of known credentials.
+        local existing_stack
+        existing_stack=$(sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -c "^bloodhound" || true)
+        if [ "${existing_stack:-0}" -gt 0 ]; then
+            local start_rc=0
+            if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^bloodhound"; then
+                log_success "BloodHound CE container stack is already running! Web interface: http://localhost:8080"
+            else
+                log_info "BloodHound stack exists but is stopped - starting it..."
+                (cd "$install_dir" && sudo docker compose up -d) 2>/dev/null || start_rc=1
+                if [ "$start_rc" -eq 0 ]; then
+                    log_success "BloodHound container stack started! Web interface: http://localhost:8080"
+                else
+                    log_warn "Could not start the BloodHound stack; start it via Portainer or: cd $install_dir && sudo docker compose up -d"
                 fi
             fi
+            # No restart policy is enforced: the stack intentionally does not auto-start after reboot.
+            log_info "BloodHound CE container status:"
+            sudo docker ps -a --filter "name=bloodhound" --format '  {{.Names}}: {{.Status}}' 2>/dev/null || true
+            local existing_pw
+            existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
+            if [ -z "$existing_pw" ]; then
+                existing_pw="(not stored - check 'cd $install_dir && sudo docker compose logs bloodhound' or reset the admin password in the BloodHound UI)"
+            fi
+            echo
+            echo -e "${GREEN}${BOLD}====================================================${NC}"
+            echo -e "${GREEN}${BOLD}BloodHound CE Credentials${NC}"
+            echo -e "${GREEN}${BOLD}====================================================${NC}"
+            echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC}"
+            echo -e "  Username:  ${BOLD}admin${NC}"
+            echo -e "  Password:  ${BOLD}${existing_pw}${NC}"
+            echo -e "  Saved to:  ${creds_file}"
+            echo -e "${YELLOW}  ⚠️  REMINDER: You must change this password on first login!${NC}"
+            echo -e "${GREEN}${BOLD}====================================================${NC}"
+            echo
+            read -rp "Please copy your username and password above. Press [Enter] to continue: " _
             return 0
         fi
 
@@ -725,12 +742,11 @@ install_rustscan() {
     local dest="/usr/local/bin/rustscan"
     local download_url="https://github.com/bee-san/RustScan/releases/download/2.4.1/x86_64-linux-rustscan.tar.gz.zip"
     local temp_dir
-    temp_dir="$(mktemp -d)"
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] curl -fsSL '$download_url' -o /tmp/rustscan.zip"
-        echo "  [DRY-RUN] unzip /tmp/rustscan.zip && tar -xzf x86_64-linux-rustscan.tar.gz"
+        echo "  [DRY-RUN] stage in a private mktemp -d directory: curl -fsSL '$download_url' -o rustscan.zip; unzip; tar -xzf"
         echo "  [DRY-RUN] sudo install -m 755 rustscan '$dest'"
     else
+        temp_dir="$(mktemp -d)"
         trap 'rm -rf "$temp_dir"' EXIT
         log_info "Downloading RustScan release archive..."
         curl -fsSL "$download_url" -o "$temp_dir/rustscan.zip"
@@ -748,12 +764,11 @@ install_naabu() {
     local dest="/usr/local/bin/naabu"
     local download_url="https://github.com/projectdiscovery/naabu/releases/download/v2.6.1/naabu_2.6.1_linux_amd64.zip"
     local temp_dir
-    temp_dir="$(mktemp -d)"
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] curl -fsSL '$download_url' -o /tmp/naabu.zip"
-        echo "  [DRY-RUN] unzip /tmp/naabu.zip naabu"
+        echo "  [DRY-RUN] stage in a private mktemp -d directory: curl -fsSL '$download_url' -o naabu.zip; unzip naabu"
         echo "  [DRY-RUN] sudo install -m 755 naabu '$dest'"
     else
+        temp_dir="$(mktemp -d)"
         trap 'rm -rf "$temp_dir"' EXIT
         log_info "Downloading Naabu release archive..."
         curl -fsSL "$download_url" -o "$temp_dir/naabu.zip"
