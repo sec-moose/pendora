@@ -294,7 +294,7 @@ Username:     admin
 Setup Token:  ${setup_token}
 Note:         Initial setup must be completed within 5 minutes of first launch.
 EOF
-        sudo chmod 600 "$creds_file"
+        sudo chmod 600 "$creds_file" || log_warn "Could not restrict permissions on $creds_file (sudo may require re-authentication); run 'sudo chmod 600 $creds_file' manually."
 
         echo
         echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -332,7 +332,7 @@ install_sysreptor() {
             log_success "SysReptor container stack is already running! Web interface: http://localhost:8000"
             if [ -f "$creds_file" ]; then
                 local existing_pw
-                existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n')
+                existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
                 if [ -n "$existing_pw" ]; then
                     echo
                     echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -365,6 +365,7 @@ install_sysreptor() {
 
         log_info "Running SysReptor installer in unattended mode (Community Edition)..."
 
+        local installer_rc=0
         (
             cd "$install_dir"
             sudo env \
@@ -373,15 +374,18 @@ install_sysreptor() {
                 CONFIRM="y" \
                 CONFIRM_AUTOUPDATE="n" \
                 bash "$installer_script"
-        ) 2>&1 | sudo tee "$creds_file"
-        sudo chmod 600 "$creds_file"
+        ) 2>&1 | sudo tee "$creds_file" || installer_rc=$?
+        if [ "$installer_rc" -ne 0 ]; then
+            log_warn "SysReptor installer exited with status ${installer_rc}; deployment may be incomplete (see output above and $creds_file)."
+        fi
+        sudo chmod 600 "$creds_file" || log_warn "Could not restrict permissions on $creds_file (sudo may require re-authentication); run 'sudo chmod 600 $creds_file' manually."
 
         # Cleanup temporary installer script
         rm -f "$installer_script"
 
         # Extract generated superuser credentials
         local generated_pw
-        generated_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n')
+        generated_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
         [ -z "$generated_pw" ] && generated_pw="Check $creds_file"
 
         echo
@@ -423,7 +427,7 @@ install_bloodhound() {
             sudo docker update --restart=always $(sudo docker ps -q --filter "name=graph-db") 2>/dev/null || true
             if [ -f "$creds_file" ]; then
                 local existing_pw
-                existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n')
+                existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
                 if [ -n "$existing_pw" ]; then
                     echo
                     echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -468,7 +472,7 @@ Web URL:   http://localhost:8080
 Username:  admin
 Password:  ${parsed_pw}
 EOF
-        sudo chmod 600 "$creds_file"
+        sudo chmod 600 "$creds_file" || log_warn "Could not restrict permissions on $creds_file (sudo may require re-authentication); run 'sudo chmod 600 $creds_file' manually."
 
         echo
         echo -e "${GREEN}${BOLD}====================================================${NC}"
