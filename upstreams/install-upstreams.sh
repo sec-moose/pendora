@@ -406,7 +406,7 @@ EOF
         echo -e "  Username:     ${BOLD}admin${NC}"
         echo -e "  Setup Token:  ${BOLD}${setup_token}${NC}"
         echo -e "  Saved to:     ${creds_file}"
-        echo -e "${YELLOW}  ⚠️  REMINDER: Copy the Setup Token above to unlock initial admin setup at https://localhost:9443!${NC}"
+        echo -e "${YELLOW}  ⚠️  REMINDER: Complete the initial admin setup in the web UI within 5 minutes - the Setup Token above expires after that!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo
         read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _
@@ -429,27 +429,42 @@ install_sysreptor() {
         ensure_docker_ready || return 1
         local creds_file="${install_dir}/admin_credentials.txt"
 
-        # If SysReptor container stack is already running, show credentials if available and skip re-installation
-        if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^sysreptor-app"; then
-            log_success "SysReptor container stack is already running! Web interface: http://localhost:8000"
-            if [ -f "$creds_file" ]; then
-                local existing_pw
-                existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
-                if [ -n "$existing_pw" ]; then
-                    echo
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo -e "${GREEN}${BOLD}SysReptor Credentials${NC}"
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo -e "  Web URL:   ${BOLD}http://localhost:8000${NC}"
-                    echo -e "  Username:  ${BOLD}reptor${NC}"
-                    echo -e "  Password:  ${BOLD}${existing_pw}${NC}"
-                    echo -e "  Saved to:  ${creds_file}"
-                    echo -e "${YELLOW}  ⚠️  REMINDER: Please change this password on first login!${NC}"
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo
-                    read -rp "Please copy your username and password above. Press [Enter] to continue: " _
+        # If a SysReptor stack already exists (running or stopped - it intentionally does not auto-start
+        # after reboot), start it and show the saved credentials instead of re-running the installer,
+        # which exits on existing volumes and would overwrite the credentials file without a password.
+        local existing_stack
+        existing_stack=$(sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -c "^sysreptor" || true)
+        if [ "${existing_stack:-0}" -gt 0 ]; then
+            if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^sysreptor-app"; then
+                log_success "SysReptor container stack is already running! Web interface: http://localhost:8000"
+            else
+                log_info "SysReptor stack exists but is stopped - starting it..."
+                if [ -f /opt/sysreptor/sysreptor/deploy/docker-compose.yml ]; then
+                    (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d) 2>/dev/null \
+                        || log_warn "Could not start the SysReptor stack; start it via Portainer or: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d"
+                else
+                    sudo docker start $(sudo docker ps -aq --filter "name=sysreptor") 2>/dev/null \
+                        || log_warn "Could not start the existing SysReptor containers; start them via Portainer."
                 fi
+                log_success "SysReptor container stack started! Web interface: http://localhost:8000"
             fi
+            local existing_pw
+            existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
+            if [ -z "$existing_pw" ]; then
+                existing_pw="(not stored - reset with: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec app python3 manage.py changepassword reptor)"
+            fi
+            echo
+            echo -e "${GREEN}${BOLD}====================================================${NC}"
+            echo -e "${GREEN}${BOLD}SysReptor Credentials${NC}"
+            echo -e "${GREEN}${BOLD}====================================================${NC}"
+            echo -e "  Web URL:   ${BOLD}http://localhost:8000${NC}"
+            echo -e "  Username:  ${BOLD}reptor${NC}"
+            echo -e "  Password:  ${BOLD}${existing_pw}${NC}"
+            echo -e "  Saved to:  ${creds_file}"
+            echo -e "${YELLOW}  ⚠️  REMINDER: Please change this password on first login!${NC}"
+            echo -e "${GREEN}${BOLD}====================================================${NC}"
+            echo
+            read -rp "Please copy your username and password above. Press [Enter] to continue: " _
             return 0
         fi
 
@@ -523,10 +538,8 @@ install_bloodhound() {
         # If BloodHound container stack is already running, show credentials if available and skip re-installation
         if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^bloodhound"; then
             log_success "BloodHound CE container stack is already running! Web interface: http://localhost:8080"
-            # Ensure running containers have restart: always enabled for boot persistence
-            sudo docker update --restart=always $(sudo docker ps -q --filter "name=bloodhound") 2>/dev/null || true
-            sudo docker update --restart=always $(sudo docker ps -q --filter "name=app-db") 2>/dev/null || true
-            sudo docker update --restart=always $(sudo docker ps -q --filter "name=graph-db") 2>/dev/null || true
+            # No restart policy is enforced: the stack intentionally does not auto-start after reboot.
+            # Start it via Portainer or: cd /opt/bloodhound && sudo docker compose up -d
             log_info "BloodHound CE container status:"
             sudo docker ps -a --filter "name=bloodhound" --format '  {{.Names}}: {{.Status}}' 2>/dev/null || true
             if [ -f "$creds_file" ]; then
@@ -643,7 +656,7 @@ EOF
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo -e "${GREEN}${BOLD}BloodHound CE Credentials${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
-        echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC} ${YELLOW}(localhost-only; remote access: ssh -L 8080:localhost:8080 <user>@<this-host>)${NC}"
+        echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC}"
         echo -e "  Username:  ${BOLD}${parsed_user}${NC}"
         echo -e "  Password:  ${BOLD}${parsed_pw}${NC}"
         echo -e "  Saved to:  ${creds_file}"
