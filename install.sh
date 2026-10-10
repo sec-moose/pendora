@@ -158,7 +158,7 @@ list_categories() {
     echo "  - hack-font    (Hack Nerd Font for terminal and prompt iconography)"
     echo "  - rustscan     (RustScan ultra-fast 65k-port scanner binary in /usr/local/bin)"
     echo "  - naabu        (Naabu fast port scanner by ProjectDiscovery in /usr/local/bin)"
-    echo "  - portainer    (Portainer Community Edition UI on port 7999)"
+    echo "  - portainer    (Portainer Community Edition UI on port 9443)"
     echo "  - sysreptor    (SysReptor CE pentest reporting platform via Docker on port 8000)"
     echo "  - bloodhound   (BloodHound Community Edition on port 8080 - Portainer manageable)"
     echo "  - devtunnel    (Microsoft Dev Tunnels CLI for secure port forwarding)"

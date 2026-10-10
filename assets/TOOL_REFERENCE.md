@@ -103,7 +103,7 @@ A quick-reference summary for every tool category, standalone suite, and contain
 
 | Service | Port / Protocol | Local Dashboard URL | Default Credentials |
 |---|---|---|---|
-| **Portainer CE** | `7999` (HTTPS) | `https://localhost:7999` | User: `admin`<br>Setup token in `/opt/portainer/admin_setup.txt` |
+| **Portainer CE** | `9443` (HTTPS) | `https://localhost:9443` | User: `admin`<br>Setup token in `/opt/portainer/admin_setup.txt` |
 | **SysReptor** | `8000` (HTTP) | `http://localhost:8000` | User: `reptor`<br>Password in `/opt/sysreptor/admin_credentials.txt` |
 | **BloodHound CE** | `8080` (HTTP) | `http://localhost:8080` | User: `admin`<br>Password in `/opt/bloodhound/admin_credentials.txt` |
 

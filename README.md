@@ -37,7 +37,7 @@ Pendora organizes tooling, services, and configuration into four dedicated tiers
 │ 1. Native DNF RPM │ 2. Pipx Isolated  │ 3. Containers  │ 4. Shell &    │
 │    (pkg-lists/)   │    (pipx-lists/)  │    & Upstreams │    Look-&-Feel│
 │                   │                   │   (upstreams/) │    (zsh/)     │
-│ 130 Fedora pkgs   │ 11 Python tools   │ Portainer:7999 │ Zsh setup     │
+│ 130 Fedora pkgs   │ 11 Python tools   │ Portainer:9443 │ Zsh setup     │
 │ Scanners, debug,  │ netexec, impacket │ SysReptor:8000 │ Completions   │
 │ compilers, sniff  │ mitmproxy, sqlmap │ BloodHound:8080│ Aliases, hl   │
 └───────────────────┴───────────────────┴────────────────┴───────────────┘
@@ -152,7 +152,7 @@ pendora/
 
 | Service | Port / Protocol | Local URL | Status & Description |
 |---|---|---|---|
-| **Portainer CE** | `7999` (HTTPS) | `https://localhost:7999` | ⚠️ *Work in Progress* — Docker management web dashboard (deployment under investigation) |
+| **Portainer CE** | `9443` (HTTPS) | `https://localhost:9443` | ⚠️ *Work in Progress* — Docker management web dashboard (deployment under investigation) |
 | **SysReptor** | `8000` (HTTP) | `http://localhost:8000` | Pentest reporting platform (uses official [SysReptor install script](https://docs.sysreptor.com/install.sh)) |
 | **BloodHound CE** | `8080` (HTTP) | `http://localhost:8080` | Active Directory attack path analysis & visualization |
 

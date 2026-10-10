@@ -50,7 +50,7 @@ ${BOLD}Available Upstream Tools:${NC}
   hack-font       Hack Nerd Font (TTF glyphs from official Nerd Fonts release)
   rustscan        RustScan modern 65k-port scanner (via GitHub release -> /usr/local/bin/rustscan)
   naabu           Naabu fast port scanner (via ProjectDiscovery -> /usr/local/bin/naabu)
-  portainer       Portainer Community Edition (management UI container on port 7999)
+  portainer       Portainer Community Edition (management UI container on port 9443)
   sysreptor       SysReptor CE pentest reporting platform (via Docker Compose on port 8000)
   bloodhound      BloodHound Community Edition (via Docker Compose on port 8080)
   devtunnel       Microsoft Dev Tunnels CLI (secure tunneling to localhost)
@@ -230,10 +230,11 @@ install_portainer() {
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p /opt/portainer"
         echo "  [DRY-RUN] sudo docker volume create portainer_data"
-        echo "  [DRY-RUN] sudo docker run -d -p 127.0.0.1:7999:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest"
+        echo "  [DRY-RUN] sudo docker pull portainer/portainer-ce:lts"
+        echo "  [DRY-RUN] sudo docker run -d -p 9443:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:lts"
         echo "  [DRY-RUN] Extract setup_token from container logs"
         echo "  [DRY-RUN] Display setup token banner and prompt user to copy before continuing"
-        echo "  [DRY-RUN] Web interface: https://localhost:7999"
+        echo "  [DRY-RUN] Web interface: https://localhost:9443"
     else
         ensure_docker_ready || return 1
 
@@ -243,7 +244,7 @@ install_portainer() {
                 log_info "Portainer container exists but is stopped. Starting it..."
                 sudo docker start portainer || log_warn "Could not start existing Portainer container; continuing."
             fi
-            log_success "Portainer CE container is already running! Web interface: https://localhost:7999"
+            log_success "Portainer CE container is already running! Web interface: https://localhost:9443"
             local existing_token=""
             if [ -f "$creds_file" ]; then
                 existing_token=$(grep -E "^Setup Token:" "$creds_file" 2>/dev/null | cut -d: -f2- | tr -d ' \r\n' || true)
@@ -257,10 +258,10 @@ install_portainer() {
             echo -e "${GREEN}${BOLD}====================================================${NC}"
             echo -e "${GREEN}${BOLD}Portainer CE Web Dashboard${NC}"
             echo -e "${GREEN}${BOLD}====================================================${NC}"
-            echo -e "  Web URL:      ${BOLD}https://localhost:7999${NC}"
+            echo -e "  Web URL:      ${BOLD}https://localhost:9443${NC}"
             echo -e "  Username:     ${BOLD}admin${NC}"
             echo -e "  Setup Token:  ${BOLD}${existing_token}${NC}"
-            echo -e "${YELLOW}  ⚠️  REMINDER: Access https://localhost:7999 to complete admin setup!${NC}"
+            echo -e "${YELLOW}  ⚠️  REMINDER: Access https://localhost:9443 to complete admin setup!${NC}"
             echo -e "${GREEN}${BOLD}====================================================${NC}"
             echo
             read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _
@@ -270,14 +271,31 @@ install_portainer() {
         sudo mkdir -p /opt/portainer
         log_info "Creating portainer_data volume..."
         sudo docker volume create portainer_data 2>/dev/null || true
+        log_info "Pulling Portainer CE image (portainer/portainer-ce:lts)..."
+        local pull_rc=1
+        local attempt
+        for attempt in 1 2 3; do
+            if sudo docker pull portainer/portainer-ce:lts; then
+                pull_rc=0
+                break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+                log_warn "Portainer image pull failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
+                sleep 5
+            fi
+        done
+        if [ "$pull_rc" -ne 0 ]; then
+            log_error "Portainer image pull failed after 3 attempts (Docker Hub network error). Check connectivity and re-run 'pendora containers'."
+            return 0
+        fi
         log_info "Deploying Portainer CE container..."
         sudo docker run -d \
-            -p 127.0.0.1:7999:9443 \
+            -p 9443:9443 \
             --name portainer \
             --restart=always \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v portainer_data:/data \
-            portainer/portainer-ce:latest
+            portainer/portainer-ce:lts || { log_error "Portainer container failed to start despite a successful pull; re-run 'pendora containers'."; return 0; }
 
         log_info "Waiting for Portainer CE container to initialize and generate setup token..."
         local setup_token=""
@@ -289,7 +307,7 @@ install_portainer() {
         [ -z "$setup_token" ] && setup_token="Check 'sudo docker logs portainer' for setup_token"
 
         sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the Setup Token above is still valid."
-Web URL:      https://localhost:7999
+Web URL:      https://localhost:9443
 Username:     admin
 Setup Token:  ${setup_token}
 Note:         Initial setup must be completed within 5 minutes of first launch.
@@ -300,15 +318,15 @@ EOF
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo -e "${GREEN}${BOLD}Portainer CE Initial Setup${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
-        echo -e "  Web URL:      ${BOLD}https://localhost:7999${NC}"
+        echo -e "  Web URL:      ${BOLD}https://localhost:9443${NC}"
         echo -e "  Username:     ${BOLD}admin${NC}"
         echo -e "  Setup Token:  ${BOLD}${setup_token}${NC}"
         echo -e "  Saved to:     ${creds_file}"
-        echo -e "${YELLOW}  ⚠️  REMINDER: Copy the Setup Token above to unlock initial admin setup at https://localhost:7999!${NC}"
+        echo -e "${YELLOW}  ⚠️  REMINDER: Copy the Setup Token above to unlock initial admin setup at https://localhost:9443!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo
         read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _
-        log_success "Portainer CE deployed successfully! Web interface: https://localhost:7999"
+        log_success "Portainer CE deployed successfully! Web interface: https://localhost:9443"
     fi
 }
 install_sysreptor() {
@@ -413,7 +431,7 @@ install_bloodhound() {
         echo "  [DRY-RUN] cd '$install_dir' && ( yes n 2>/dev/null; true ) | sudo ./bloodhound-cli install"
         echo "  [DRY-RUN] Display credentials banner and prompt user to copy before continuing"
         echo "  [DRY-RUN] BloodHound CE interface will be accessible at: http://localhost:8080"
-        echo "  [DRY-RUN] Stack and volumes fully manageable in Portainer at: https://localhost:7999"
+        echo "  [DRY-RUN] Stack and volumes fully manageable in Portainer at: https://localhost:9443"
     else
         ensure_docker_ready || return 1
 
@@ -513,7 +531,7 @@ EOF
         read -rp "Please copy your username and password above. Press [Enter] to continue: " _
 
         log_success "BloodHound CE deployed successfully! Web interface: http://localhost:8080"
-        log_info "BloodHound stack and volumes are fully manageable in Portainer (https://localhost:7999)."
+        log_info "BloodHound stack and volumes are fully manageable in Portainer (https://localhost:9443)."
     fi
 }
 install_devtunnel() {
