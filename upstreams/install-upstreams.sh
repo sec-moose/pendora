@@ -224,13 +224,89 @@ ensure_docker_ready() {
     sudo usermod -aG docker "$target_user" 2>/dev/null || true
 }
 
+portainer_write_compose_file() {
+    local sock_mount="/var/run/docker.sock:/var/run/docker.sock"
+    if [ "$(getenforce 2>/dev/null)" = "Enforcing" ]; then
+        sock_mount="/var/run/docker.sock:/var/run/docker.sock:z"
+        log_info "SELinux is Enforcing: relabeling the Docker socket mount (:z) so Portainer can access it."
+    fi
+    sudo mkdir -p /opt/portainer
+    sudo tee /opt/portainer/portainer-compose.yaml >/dev/null <<EOF || { log_error "Could not write /opt/portainer/portainer-compose.yaml."; return 1; }
+services:
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:lts
+    restart: always
+    volumes:
+      - ${sock_mount}
+      - portainer_data:/data
+    ports:
+      - 9443:9443
+      # - 8000:8000  # Remove if you do not intend to use Edge Agents
+
+volumes:
+  portainer_data:
+    name: portainer_data
+
+networks:
+  default:
+    name: portainer_network
+EOF
+}
+
+portainer_test_deployment() {
+    local test_failures=0
+    if sudo docker exec portainer sh -c 'test -S /var/run/docker.sock' 2>/dev/null; then
+        log_success "Docker socket is mounted inside the Portainer container."
+    else
+        log_error "Docker socket is NOT available inside the Portainer container."
+        test_failures=$((test_failures + 1))
+    fi
+    local pt_version
+    pt_version=$(sudo docker exec portainer /portainer --version 2>/dev/null || true)
+    if [ -n "$pt_version" ]; then
+        log_info "Portainer version: ${pt_version}"
+    else
+        log_warn "Could not determine the Portainer version."
+        test_failures=$((test_failures + 1))
+    fi
+    local ui_ok=false
+    for _ in {1..15}; do
+        if curl -ksS -o /dev/null https://127.0.0.1:9443 2>/dev/null; then
+            ui_ok=true
+            break
+        fi
+        sleep 2
+    done
+    if [ "$ui_ok" = true ]; then
+        log_success "Portainer UI answers on https://localhost:9443."
+    else
+        log_error "Portainer UI did not answer on https://localhost:9443 within 30s."
+        test_failures=$((test_failures + 1))
+    fi
+    local env_errs
+    env_errs=$(sudo docker logs portainer 2>&1 | grep -icE 'cannot connect|permission denied|operation not permitted' || true)
+    if [ "${env_errs:-0}" -gt 0 ]; then
+        log_warn "Portainer logs contain ${env_errs} connection/permission errors:"
+        sudo docker logs portainer 2>&1 | grep -iE 'cannot connect|permission denied|operation not permitted' | tail -n 3 || true
+        if [ "$(getenforce 2>/dev/null)" = "Enforcing" ]; then
+            log_warn "SELinux is Enforcing - inspect denials with: sudo ausearch -m avc -ts recent | grep -i docker"
+        fi
+        test_failures=$((test_failures + 1))
+    else
+        log_success "No environment-connection errors in the Portainer logs."
+    fi
+    return "$test_failures"
+}
+
 install_portainer() {
     log_info "Configuring Docker service and deploying Portainer CE..."
     local creds_file="/opt/portainer/admin_setup.txt"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p /opt/portainer"
-        echo "  [DRY-RUN] Write portainer-compose.yaml (image portainer/portainer-ce:lts, ports 9443:9443, Edge Agent port 8000 commented out)"
+        echo "  [DRY-RUN] Write portainer-compose.yaml (lts image, 9443:9443; socket relabeled :z when SELinux is Enforcing)"
         echo "  [DRY-RUN] cd /opt/portainer && sudo docker compose -f portainer-compose.yaml up -d"
+        echo "  [DRY-RUN] Test: socket mounted, UI on https://localhost:9443, version printed, env-connection errors checked"
         echo "  [DRY-RUN] Extract setup_token from container logs"
         echo "  [DRY-RUN] Display setup token banner and prompt user to copy before continuing"
         echo "  [DRY-RUN] Web interface: https://localhost:9443"
@@ -244,11 +320,17 @@ install_portainer() {
                 sudo docker start portainer || log_warn "Could not start existing Portainer container; continuing."
             fi
             log_success "Portainer CE container is already running! Web interface: https://localhost:9443"
-            # Refresh to the current lts digest when deployed via compose (no-op when unchanged; skips foreign containers)
+            # Rewrite the compose file (picks up SELinux :z etc.) and refresh to the current lts digest.
+            # A foreign (non-compose) container makes 'up -d' fail on the name; the running one is kept then.
+            portainer_write_compose_file || true
             if sudo docker compose -f /opt/portainer/portainer-compose.yaml pull 2>/dev/null; then
-                sudo docker compose -f /opt/portainer/portainer-compose.yaml up -d 2>/dev/null || log_warn "Could not refresh the Portainer container; continuing with the running one."
-                sudo docker exec portainer /portainer --version 2>/dev/null || true
+                if sudo docker compose -f /opt/portainer/portainer-compose.yaml up -d 2>/dev/null; then
+                    log_info "Portainer container refreshed to the current configuration."
+                else
+                    log_warn "Could not refresh the Portainer container (foreign or stale). To recreate it: sudo docker rm -f portainer && sudo docker compose -f /opt/portainer/portainer-compose.yaml up -d"
+                fi
             fi
+            portainer_test_deployment || log_warn "Portainer deployment tests reported problems above."
             local existing_token=""
             if [ -f "$creds_file" ]; then
                 existing_token=$(grep -E "^Setup Token:" "$creds_file" 2>/dev/null | cut -d: -f2- | tr -d ' \r\n' || true)
@@ -272,29 +354,8 @@ install_portainer() {
             return 0
         fi
 
-        sudo mkdir -p /opt/portainer
         log_info "Writing portainer-compose.yaml to /opt/portainer..."
-        sudo tee /opt/portainer/portainer-compose.yaml >/dev/null <<'EOF' || { log_error "Could not write /opt/portainer/portainer-compose.yaml."; return 0; }
-services:
-  portainer:
-    container_name: portainer
-    image: portainer/portainer-ce:lts
-    restart: always
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    ports:
-      - 9443:9443
-      # - 8000:8000  # Remove if you do not intend to use Edge Agents
-
-volumes:
-  portainer_data:
-    name: portainer_data
-
-networks:
-  default:
-    name: portainer_network
-EOF
+        portainer_write_compose_file || { log_error "Could not write /opt/portainer/portainer-compose.yaml."; return 0; }
         log_info "Deploying Portainer CE via docker compose..."
         local compose_rc=1
         local attempt
@@ -313,8 +374,9 @@ EOF
             return 0
         fi
 
+        portainer_test_deployment || log_warn "Portainer deployment tests reported problems above."
+
         log_info "Waiting for Portainer CE container to initialize and generate setup token..."
-        sudo docker exec portainer /portainer --version 2>/dev/null || true
         local setup_token=""
         for _ in {1..15}; do
             setup_token=$(sudo docker logs portainer 2>&1 | grep -oE "setup_token=[a-zA-Z0-9._-]+" | cut -d= -f2 | head -n 1 | tr -d '\r\n' || true)
