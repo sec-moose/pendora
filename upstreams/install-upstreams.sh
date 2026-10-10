@@ -244,6 +244,11 @@ install_portainer() {
                 sudo docker start portainer || log_warn "Could not start existing Portainer container; continuing."
             fi
             log_success "Portainer CE container is already running! Web interface: https://localhost:9443"
+            # Refresh to the current lts digest when deployed via compose (no-op when unchanged; skips foreign containers)
+            if sudo docker compose -f /opt/portainer/portainer-compose.yaml pull 2>/dev/null; then
+                sudo docker compose -f /opt/portainer/portainer-compose.yaml up -d 2>/dev/null || log_warn "Could not refresh the Portainer container; continuing with the running one."
+                sudo docker exec portainer /portainer --version 2>/dev/null || true
+            fi
             local existing_token=""
             if [ -f "$creds_file" ]; then
                 existing_token=$(grep -E "^Setup Token:" "$creds_file" 2>/dev/null | cut -d: -f2- | tr -d ' \r\n' || true)
@@ -309,6 +314,7 @@ EOF
         fi
 
         log_info "Waiting for Portainer CE container to initialize and generate setup token..."
+        sudo docker exec portainer /portainer --version 2>/dev/null || true
         local setup_token=""
         for _ in {1..15}; do
             setup_token=$(sudo docker logs portainer 2>&1 | grep -oE "setup_token=[a-zA-Z0-9._-]+" | cut -d= -f2 | head -n 1 | tr -d '\r\n' || true)
@@ -438,9 +444,10 @@ install_bloodhound() {
     local creds_file="${install_dir}/admin_credentials.txt"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p '$install_dir'"
-        echo "  [DRY-RUN] Download bloodhound-cli-linux-amd64 from SpecterOps GitHub releases to '$install_dir'"
-        echo "  [DRY-RUN] cd '$install_dir' && ( yes n 2>/dev/null; true ) | sudo ./bloodhound-cli install"
-        echo "  [DRY-RUN] Display credentials banner and prompt user to copy before continuing"
+        echo "  [DRY-RUN] Download docker-compose.yml from SpecterOps/BloodHound examples to '$install_dir'"
+        echo "  [DRY-RUN] Write bloodhound.config.json with a generated initial admin password and enable its compose mount"
+        echo "  [DRY-RUN] cd '$install_dir' && sudo docker compose up -d"
+        echo "  [DRY-RUN] Wait for http://localhost:8080 to answer, then display the credentials banner"
         echo "  [DRY-RUN] BloodHound CE interface will be accessible at: http://localhost:8080"
         echo "  [DRY-RUN] Stack and volumes fully manageable in Portainer at: https://localhost:9443"
     else
@@ -453,6 +460,8 @@ install_bloodhound() {
             sudo docker update --restart=always $(sudo docker ps -q --filter "name=bloodhound") 2>/dev/null || true
             sudo docker update --restart=always $(sudo docker ps -q --filter "name=app-db") 2>/dev/null || true
             sudo docker update --restart=always $(sudo docker ps -q --filter "name=graph-db") 2>/dev/null || true
+            log_info "BloodHound CE container status:"
+            sudo docker ps -a --filter "name=bloodhound" --format '  {{.Names}}: {{.Status}}' 2>/dev/null || true
             if [ -f "$creds_file" ]; then
                 local existing_pw
                 existing_pw=$(awk '/with this password: /{sub(/.*with this password: /,""); print; exit} /^Password:[[:space:]]+/{sub(/^Password:[[:space:]]+/,""); print; exit}' "$creds_file" 2>/dev/null | tr -d '\r\n' || true)
@@ -475,50 +484,85 @@ install_bloodhound() {
         fi
 
         sudo mkdir -p "$install_dir"
-        log_info "Downloading BloodHound CLI from official SpecterOps releases..."
-        (
-            cd "$install_dir"
-            sudo curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o bhcli.tar.gz \
-                https://github.com/SpecterOps/bloodhound-cli/releases/latest/download/bloodhound-cli-linux-amd64.tar.gz
-            sudo tar -xzf bhcli.tar.gz
-            sudo rm -f bhcli.tar.gz
-            sudo chmod +x bloodhound-cli
-        ) || { log_error "BloodHound CLI download failed; skipping BloodHound CE deployment."; return 0; }
-        log_info "Installing BloodHound CE via bloodhound-cli (image pulls may take a few minutes)..."
-        local install_rc=1
+        log_info "Downloading official BloodHound CE docker-compose.yml to $install_dir..."
+        sudo curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "$install_dir/docker-compose.yml" \
+            https://raw.githubusercontent.com/SpecterOps/BloodHound/main/examples/docker-compose/docker-compose.yml \
+            || { log_error "Could not download the BloodHound CE compose file; skipping BloodHound CE deployment."; return 0; }
+
+        # Deterministic initial admin password via the documented config-file mount
+        local initial_pw
+        initial_pw="$(openssl rand -base64 20 | tr -d '\r\n=')"
+        log_info "Writing bloodhound.config.json (sets the initial admin password)..."
+        sudo tee "$install_dir/bloodhound.config.json" >/dev/null <<EOF || { log_error "Could not write $install_dir/bloodhound.config.json."; return 0; }
+{
+  "version": 1,
+  "bind_addr": "0.0.0.0:8080",
+  "metrics_port": ":2112",
+  "root_url": "http://127.0.0.1:8080/",
+  "work_dir": "/opt/bloodhound/work",
+  "log_level": "INFO",
+  "graph_driver": "neo4j",
+  "tls": {
+    "cert_file": "",
+    "key_file": ""
+  },
+  "collectors_base_path": "/etc/bloodhound/collectors",
+  "default_password": "$initial_pw",
+  "default_admin": {
+    "enabled": true,
+    "principal_name": "admin",
+    "first_name": "BloodHound",
+    "last_name": "Admin",
+    "email_address": "admin@example.com"
+  }
+  }
+EOF
+        # Enable the commented-out config mount in the compose file (docs: custom-installation)
+        sudo sed -i 's|^    # volumes:$|    volumes:|; s|^    #   - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$|      - ./bloodhound.config.json:/bloodhound.config.json:ro|' "$install_dir/docker-compose.yml"
+        if ! sudo grep -q '^      - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$' "$install_dir/docker-compose.yml"; then
+            log_error "Could not enable the bloodhound.config.json mount in docker-compose.yml; skipping BloodHound CE deployment."
+            return 0
+        fi
+
+        log_info "Starting BloodHound CE stack via docker compose (image pulls may take a few minutes)..."
+        local compose_rc=1
         local attempt
         for attempt in 1 2 3; do
-            if (cd "$install_dir" && ( yes n 2>/dev/null; true ) | sudo ./bloodhound-cli install) 2>&1 | sudo tee "$creds_file"; then
-                install_rc=0
+            if (cd "$install_dir" && sudo docker compose up -d); then
+                compose_rc=0
                 break
             fi
             if [ "$attempt" -lt 3 ]; then
-                log_warn "bloodhound-cli install failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
+                log_warn "docker compose up failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
                 sleep 5
             fi
         done
-        if [ "$install_rc" -ne 0 ]; then
-            log_error "BloodHound CE deployment failed after 3 attempts (image pull network error). Check connectivity, then re-run 'pendora containers', or deploy manually: cd $install_dir && sudo ./bloodhound-cli install"
+        if [ "$compose_rc" -ne 0 ]; then
+            log_error "BloodHound CE deployment failed after 3 attempts (image pull network error). Check connectivity and re-run 'pendora containers', or deploy manually: cd $install_dir && sudo docker compose up -d"
             return 0
         fi
-        sudo chmod 600 "$creds_file" || log_warn "Could not restrict permissions on $creds_file (sudo may require re-authentication); run 'sudo chmod 600 $creds_file' manually."
 
-        # Ensure the stack restarts on boot (the CLI compose file defines no restart policy)
-        sudo docker update --restart=always $(sudo docker ps -q --filter "name=bloodhound") 2>/dev/null || true
-        sudo docker update --restart=always $(sudo docker ps -q --filter "name=app-db") 2>/dev/null || true
-        sudo docker update --restart=always $(sudo docker ps -q --filter "name=graph-db") 2>/dev/null || true
-
+        # Wait for the UI to answer (initial graph analysis can take ~1 minute; exit 137 = out of memory)
+        log_info "Waiting for the BloodHound UI to answer on http://localhost:8080..."
+        local ui_up=false
+        for _ in {1..45}; do
+            if curl -fsS -o /dev/null http://127.0.0.1:8080 2>/dev/null; then
+                ui_up=true
+                break
+            fi
+            sleep 2
+        done
+        if [ "$ui_up" = true ]; then
+            log_success "BloodHound UI is answering on http://localhost:8080."
+        else
+            log_warn "BloodHound UI did not answer within 90 seconds."
+        fi
         log_info "BloodHound CE container status:"
         sudo docker ps -a --filter "name=bloodhound" --format '  {{.Names}}: {{.Status}}' 2>/dev/null || true
-        log_info "If the UI is unreachable, inspect: sudo docker logs \$(sudo docker ps -q --filter name=bloodhound-bloodhound | head -n1) --tail 50"
+        log_info "If the UI is unreachable, inspect: cd $install_dir && sudo docker compose logs bloodhound --tail 50 (exit 137 = out of memory; 8GB RAM required)"
 
-        # Parse credentials from the bloodhound-cli install output
-        local parsed_user
-        parsed_user=$(grep -oE 'log in as `[^`]+`' "$creds_file" 2>/dev/null | head -n 1 | sed -E 's/.*`([^`]+)`.*/\1/' | tr -d '\r\n' || true)
-        [ -z "$parsed_user" ] && parsed_user="admin"
-        local parsed_pw
-        parsed_pw=$(grep -E "with this password: " "$creds_file" 2>/dev/null | tail -n 1 | sed -E 's/.*with this password: //' | tr -d '\r\n' || true)
-        [ -z "$parsed_pw" ] && parsed_pw="Run 'cd $install_dir && sudo ./bloodhound-cli config get default_password' to view"
+        local parsed_user="admin"
+        local parsed_pw="$initial_pw"
 
         # Save credentials to /opt/bloodhound/admin_credentials.txt
         sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the credentials above are still valid."

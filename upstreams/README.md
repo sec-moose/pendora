@@ -16,7 +16,7 @@ This directory contains deployment scripts and documentation for security tools,
 | **Naabu** | GitHub Release (`projectdiscovery/naabu`) | CLI (`/usr/local/bin/naabu`) | Fast TCP SYN/CONNECT port scanner (ProjectDiscovery) |
 | **Portainer CE** | Docker Container | `https://localhost:9443` | Container management web interface |
 | **SysReptor** | Docker Compose Installer | `http://localhost:8000` | Pentest reporting and finding documentation platform |
-| **BloodHound CE** | bloodhound-cli (Docker Compose wrapper) | `http://localhost:8080` | Active Directory attack path analysis & visualization (Portainer manageable) |
+| **BloodHound CE** | Docker Compose (official SpecterOps compose file) | `http://localhost:8080` | Active Directory attack path analysis & visualization (Portainer manageable) |
 | **Dev Tunnels** | Microsoft Official (`aka.ms/TunnelsCliDownload`) | CLI (`devtunnel`) | Microsoft Dev Tunnels CLI for secure tunneling and remote port forwarding |
 | **Responder** | GitHub Git Clone (`lgandx/Responder`) + Venv | CLI (`responder`) | LLMNR, NBT-NS, and mDNS poisoner and credential harvester |
 
