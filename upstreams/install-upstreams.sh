@@ -225,10 +225,13 @@ ensure_docker_ready() {
 }
 
 portainer_write_compose_file() {
-    local sock_mount="/var/run/docker.sock:/var/run/docker.sock"
+    local selinux_block=""
     if [ "$(getenforce 2>/dev/null)" = "Enforcing" ]; then
-        sock_mount="/var/run/docker.sock:/var/run/docker.sock:z"
-        log_info "SELinux is Enforcing: relabeling the Docker socket mount (:z) so Portainer can access it."
+        # On enforcing hosts container-selinux denies container_t -> container_runtime_t:unix_stream_socket
+        # connectto (the docker.sock connect) regardless of any mount relabel; Red Hat's remedy is
+        # --security-opt label=disable (bugzilla #1758227). The container holds the docker socket anyway.
+        selinux_block=$'    security_opt:\n      - label:disable'
+        log_info "SELinux is Enforcing: disabling SELinux labeling for the Portainer container (label:disable) - without it the Docker socket connect is denied by policy."
     fi
     sudo mkdir -p /opt/portainer
     sudo tee /opt/portainer/portainer-compose.yaml >/dev/null <<EOF || { log_error "Could not write /opt/portainer/portainer-compose.yaml."; return 1; }
@@ -237,8 +240,9 @@ services:
     container_name: portainer
     image: portainer/portainer-ce:lts
     restart: always
+${selinux_block}
     volumes:
-      - ${sock_mount}
+      - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     ports:
       - 9443:9443
@@ -295,7 +299,7 @@ portainer_test_deployment() {
         fi
         test_failures=$((test_failures + 1))
     else
-        log_success "No environment-connection errors in the Portainer logs."
+        log_success "No connection/permission errors in the Portainer logs (CE creates the 'local' environment when the wizard page loads - it reports 'We have connected your local environment' on success)."
     fi
     return "$test_failures"
 }
