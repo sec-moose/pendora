@@ -359,6 +359,9 @@ stow_module() {
 
     log_info "Applying ${BOLD}${module}${NC} dotfiles via GNU Stow into $target_home..."
     mkdir -p "$target_home/.config"
+    if [ -n "${SUDO_USER:-}" ] && [ "$EUID" -eq 0 ]; then
+        chown "${target_user}:$(id -gn "$target_user")" "$target_home/.config"
+    fi
 
     # Back up existing non-symlink targets to prevent Stow conflicts
     case "$module" in

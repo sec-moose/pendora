@@ -1,4 +1,8 @@
 # Pendora <img src="assets/logo.svg" width="34" height="34" alt="Pendora" style="vertical-align: middle;" />
+
+> ⚠️ **Beta Branch Disclaimer**
+> This branch is unstable and will receive potentially unstable and script-breaking updates without notice. For the stable version, see the [main branch](https://github.com/sec-moose/pendora/tree/main).
+
 🌐 **Official Website**: [https://pendora.tech](https://pendora.tech) &nbsp;|&nbsp; ❓ **FAQ**: [https://pendora.tech/#faq](https://pendora.tech/#faq)
 
 [![Website](https://img.shields.io/badge/Website-pendora.tech-51A2DA?style=flat-square&logo=firefox&logoColor=white)](https://pendora.tech/)
@@ -37,13 +41,13 @@ Pendora organizes tooling, services, and configuration into four dedicated tiers
 │ 1. Native DNF RPM │ 2. Pipx Isolated  │ 3. Containers  │ 4. Shell &    │
 │    (pkg-lists/)   │    (pipx-lists/)  │    & Upstreams │    Look-&-Feel│
 │                   │                   │   (upstreams/) │    (zsh/)     │
-│ 130 Fedora pkgs   │ 11 Python tools   │ Portainer:9443 │ Zsh setup     │
+│ 132 Fedora pkgs   │ 11 Python tools   │ Portainer:9443 │ Zsh setup     │
 │ Scanners, debug,  │ netexec, impacket │ SysReptor:8000 │ Completions   │
 │ compilers, sniff  │ mitmproxy, sqlmap │ BloodHound:8080│ Aliases, hl   │
 └───────────────────┴───────────────────┴────────────────┴───────────────┘
 ```
 
-1. **Native Fedora RPMs (`pkg-lists/`)**: 130 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, and forensics.
+1. **Native Fedora RPMs (`pkg-lists/`)**: 132 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, and forensics.
 2. **Pipx Isolated Python Tools (`pipx-lists/`)**: Offensive Python utilities requiring isolated environments to prevent library conflicts with system Python (`netexec`, `impacket`, `certipy-ad`, `bloodhound-ce`, `updog`, `sqlmap`, etc.).
 3. **Standalone Upstreams & Containers (`upstreams/`)**: Vendor installers, git clones, and Docker containers for enterprise suites (`metasploit`, `burpsuite`, `seclists`, `evil-winrm`, `zap`, `hack-font`, `rustscan`, `naabu`, `portainer`, `sysreptor`, `bloodhound`, `devtunnel`, `responder`).
 4. **Interactive Shell Environment (`zsh/`)**: Interactive Zsh configuration with autosuggestions, syntax highlighting, and pentesting aliases.
@@ -109,7 +113,7 @@ The scripts and package templates in this project are designed, tested, and vali
    > The script handles `sudo` internally for tasks requiring root (DNF, hostname, Docker service). Running the entire script under `sudo` will incorrectly install user tools (`pipx`, `.zshrc`) into `/root/` instead of your user environment.
 
 3. **Installation Duration, Prompts & Network Downloads**:
-   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 120+ RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
+   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 132 RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
    * **Sudo & Interactive Pauses**: Keep an eye on the terminal. The script periodically requests your `sudo` password for privileged operations and pauses to present generated credential cards (Portainer setup token, SysReptor credentials, BloodHound password) waiting for `[Enter]` to proceed.
    * **OWASP ZAP & Dev Tunnels Downloads**: During the upstream installations, downloading **OWASP ZAP** (Flatpak runtimes: `org.freedesktop.Platform`, GNOME runtime, codecs) and the standalone **Microsoft Dev Tunnels CLI** (`devtunnel`) binary takes time. The terminal may appear frozen or idle for several minutes while downloading these packages. **This is completely normal and has not hung during testing** — do not terminate the process; it will proceed automatically once the downloads finish.
 ---
@@ -150,11 +154,15 @@ pendora/
 
 ## Web Services & Dashboards
 
-| Service | Port / Protocol | Local URL | Status & Description |
+| Service | Port / URL | Credentials | Auto-start after reboot |
 |---|---|---|---|
-| **Portainer CE** | `9443` (HTTPS) | `https://localhost:9443` | ⚠️ *Work in Progress* — Docker management web dashboard (deployment under investigation) |
-| **SysReptor** | `8000` (HTTP) | `http://localhost:8000` | Pentest reporting platform (uses official [SysReptor install script](https://docs.sysreptor.com/install.sh)) |
-| **BloodHound CE** | `8080` (HTTP) | `http://localhost:8080` | Active Directory attack path analysis & visualization |
+| **Portainer CE** | `https://localhost:9443` | User `admin`; Setup Token saved to `/opt/portainer/admin_setup.txt` — complete web setup within **5 minutes** of first launch | ✅ Yes (`restart: always`) |
+| **SysReptor** | `http://localhost:8000` | User `reptor`; password in `/opt/sysreptor/admin_credentials.txt` | ❌ No |
+| **BloodHound CE** | `http://localhost:8080` | User `admin`; password in `/opt/bloodhound/admin_credentials.txt` | ❌ No |
+
+> ℹ️ **SELinux note (Portainer)**: on enforcing hosts the deployed compose uses `security_opt: [label:disable]`; container-selinux otherwise denies Portainer's docker.sock connection (RHBZ #1758227).
+> ▶️ **After a reboot**, start SysReptor with `cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d` and BloodHound with `cd /opt/bloodhound && sudo docker compose up -d` (or via Portainer). BloodHound needs ~8 GB RAM (exit 137 = OOM).
+> 🔑 **SysReptor password reset**: `cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec app python3 manage.py changepassword reptor`
 
 *(For full credentials, startup commands, and terminal workflows across all categories, see the [Tool Reference Guide](assets/TOOL_REFERENCE.md)).*
 > ℹ️ **Third-Party Script Notice**: The SysReptor deployment pulls and executes the vendor's official installer from [`https://docs.sysreptor.com/install.sh`](https://docs.sysreptor.com/install.sh). Users should always review third-party scripts before running them.
@@ -292,9 +300,10 @@ sudo reboot
 
 ## Known Issues & Work in Progress
 
-* **Portainer Deployment (Under Investigation)**:  
-  The automated Portainer CE container deployment is currently not initializing properly during the upstream installation phase.  
-  > ℹ️ **Isolated Scope**: This issue is confined strictly to Portainer itself and **does not affect any other container stacks** (such as SysReptor or BloodHound CE), which build, initialize, and operate normally.
+* **SysReptor & BloodHound CE do not auto-start after reboot (by design)**:  
+  Both container stacks intentionally have no restart policy — start them after a reboot via Portainer, or manually:  
+  `cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d` · `cd /opt/bloodhound && sudo docker compose up -d`  
+  > ℹ️ **Isolated Scope**: Portainer CE auto-starts on boot (`restart: always`) and manages all three stacks.
 
 * **Sway Virtual Machine Viewer Rescaling (Work in Progress)**:  
   When running the Sway session inside a virtual machine (e.g., `virt-manager` / QEMU with SPICE):
