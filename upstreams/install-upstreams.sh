@@ -230,7 +230,7 @@ install_portainer() {
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p /opt/portainer"
         echo "  [DRY-RUN] sudo docker volume create portainer_data"
-        echo "  [DRY-RUN] sudo docker run -d -p 127.0.0.1:7999:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest"
+        echo "  [DRY-RUN] sudo docker run -d -p 7999:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest"
         echo "  [DRY-RUN] Extract setup_token from container logs"
         echo "  [DRY-RUN] Display setup token banner and prompt user to copy before continuing"
         echo "  [DRY-RUN] Web interface: https://localhost:7999"
@@ -272,7 +272,7 @@ install_portainer() {
         sudo docker volume create portainer_data 2>/dev/null || true
         log_info "Deploying Portainer CE container..."
         sudo docker run -d \
-            -p 127.0.0.1:7999:9443 \
+            -p 7999:9443 \
             --name portainer \
             --restart=always \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -410,7 +410,7 @@ install_bloodhound() {
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p '$install_dir'"
         echo "  [DRY-RUN] Download bloodhound-cli-linux-amd64 from SpecterOps GitHub releases to '$install_dir'"
-        echo "  [DRY-RUN] cd '$install_dir' && printf 'n\\n\\n' | sudo ./bloodhound-cli install"
+        echo "  [DRY-RUN] cd '$install_dir' && ( yes n 2>/dev/null; true ) | sudo env BLOODHOUND_HOST=0.0.0.0 ./bloodhound-cli install"
         echo "  [DRY-RUN] Display credentials banner and prompt user to copy before continuing"
         echo "  [DRY-RUN] BloodHound CE interface will be accessible at: http://localhost:8080"
         echo "  [DRY-RUN] Stack and volumes fully manageable in Portainer at: https://localhost:7999"
@@ -459,7 +459,7 @@ install_bloodhound() {
         local install_rc=1
         local attempt
         for attempt in 1 2 3; do
-            if (cd "$install_dir" && ( yes n 2>/dev/null; true ) | sudo ./bloodhound-cli install) 2>&1 | sudo tee "$creds_file"; then
+            if (cd "$install_dir" && ( yes n 2>/dev/null; true ) | sudo env BLOODHOUND_HOST=0.0.0.0 ./bloodhound-cli install) 2>&1 | sudo tee "$creds_file"; then
                 install_rc=0
                 break
             fi
@@ -478,6 +478,10 @@ install_bloodhound() {
         sudo docker update --restart=always $(sudo docker ps -q --filter "name=bloodhound") 2>/dev/null || true
         sudo docker update --restart=always $(sudo docker ps -q --filter "name=app-db") 2>/dev/null || true
         sudo docker update --restart=always $(sudo docker ps -q --filter "name=graph-db") 2>/dev/null || true
+
+        log_info "BloodHound CE container status:"
+        sudo docker ps -a --filter "name=bloodhound" --format '  {{.Names}}: {{.Status}}' 2>/dev/null || true
+        log_info "If the UI is unreachable, inspect: sudo docker logs \$(sudo docker ps -q --filter name=bloodhound-bloodhound | head -n1) --tail 50"
 
         # Parse credentials from the bloodhound-cli install output
         local parsed_user
@@ -499,7 +503,7 @@ EOF
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo -e "${GREEN}${BOLD}BloodHound CE Credentials${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
-        echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC}"
+        echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC} ${YELLOW}(from other devices: http://$(hostname -I 2>/dev/null | awk '{print $1}'):8080)${NC}"
         echo -e "  Username:  ${BOLD}${parsed_user}${NC}"
         echo -e "  Password:  ${BOLD}${parsed_pw}${NC}"
         echo -e "  Saved to:  ${creds_file}"
