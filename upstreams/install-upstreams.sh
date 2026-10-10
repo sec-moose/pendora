@@ -448,11 +448,26 @@ install_bloodhound() {
 
         sudo mkdir -p "$install_dir"
         log_info "Downloading official BloodHound CE docker-compose.yml to $install_dir..."
-        sudo curl -sSL https://ghst.ly/getbhce -o "$install_dir/docker-compose.yml"
+        sudo curl -sSL --retry 3 --retry-delay 2 --retry-all-errors https://ghst.ly/getbhce -o "$install_dir/docker-compose.yml"
         # Ensure all BloodHound CE services auto-start on system boot
         sudo sed -i '/image:/a \    restart: always' "$install_dir/docker-compose.yml"
         log_info "Starting BloodHound CE stack via docker compose..."
-        (cd "$install_dir" && sudo docker compose up -d)
+        local compose_rc=1
+        local attempt
+        for attempt in 1 2 3; do
+            if (cd "$install_dir" && sudo docker compose up -d); then
+                compose_rc=0
+                break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+                log_warn "docker compose up failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
+                sleep 5
+            fi
+        done
+        if [ "$compose_rc" -ne 0 ]; then
+            log_error "BloodHound CE deployment failed after 3 attempts (image pull network error). Check connectivity, then re-run 'pendora containers', or deploy manually: cd $install_dir && sudo docker compose up -d"
+            return 0
+        fi
         log_info "Waiting for BloodHound CE container to initialize..."
         local raw_pw_line=""
         local parsed_pw=""
