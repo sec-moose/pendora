@@ -256,14 +256,15 @@ EOF
 
 portainer_test_deployment() {
     local test_failures=0
-    if sudo docker exec portainer sh -c 'test -S /var/run/docker.sock' 2>/dev/null; then
-        log_success "Docker socket is mounted inside the Portainer container."
+    # The portainer image ships no shell - verify the socket mount from the host via inspect
+    if sudo docker inspect portainer --format '{{range .Mounts}}{{.Destination}} {{end}}' 2>/dev/null | grep -q '/var/run/docker.sock'; then
+        log_success "Docker socket is mounted into the Portainer container."
     else
-        log_error "Docker socket is NOT available inside the Portainer container."
+        log_error "Docker socket is NOT mounted into the Portainer container."
         test_failures=$((test_failures + 1))
     fi
     local pt_version
-    pt_version=$(sudo docker exec portainer /portainer --version 2>/dev/null || true)
+    pt_version=$(sudo docker exec portainer /portainer --version 2>&1 | head -n 1 || true)
     if [ -n "$pt_version" ]; then
         log_info "Portainer version: ${pt_version}"
     else
