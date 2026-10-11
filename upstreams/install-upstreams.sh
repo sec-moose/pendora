@@ -594,7 +594,7 @@ install_bloodhound() {
 EOF
         printf 'bhe_recreate_default_admin=true\n' | sudo tee "$install_dir/.env" >/dev/null || { log_error "Could not write $install_dir/.env."; return 0; }
         sudo chmod 600 "$install_dir/bloodhound.config.json" "$install_dir/.env" 2>/dev/null || true
-        sudo chmod 750 "$install_dir" 2>/dev/null || true
+        sudo chmod 755 "$install_dir" 2>/dev/null || true
 
         # Restrict port binding to localhost loopback in docker-compose.yml
         sudo sed -i 's|[[:space:]]*- 8080:8080|      - 127.0.0.1:8080:8080|g; s|[[:space:]]*- "8080:8080"|      - "127.0.0.1:8080:8080"|g' "$install_dir/docker-compose.yml" 2>/dev/null || true
