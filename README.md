@@ -244,10 +244,14 @@ Install only the specific components you need:
 
 # Set system hostname to 'pendora'
 ./install.sh --hostname
+# Run all standalone upstream installers directly (Metasploit, Burp, SecLists, etc.)
+./install.sh --upstreams
+
+# Install packages from a custom package list file
+./install.sh --file my-packages.list
+
 # Run specific upstream targets directly
-cd upstreams
-./install-upstreams.sh portainer sysreptor bloodhound devtunnel responder hack-font
-```
+./upstreams/install-upstreams.sh portainer sysreptor bloodhound devtunnel responder hack-font
 
 ### 4. Sway Dynamic Desktop (`--sway` / `-W`) — Tested & Verified
 Deploys the complete standalone Sway Wayland tiling compositor, Noctalia shell, dynamic opacity, Hack Nerd Font, and terminal configurations:
@@ -278,9 +282,11 @@ Installs the complete penetration testing toolkit (all native security packages 
 # Interactive run
 ./install.sh --all
 
-# Non-interactive automated run
+# Non-interactive automated run (automatically reboots host in 5s upon completion)
 ./install.sh --all --yes
-```
+
+# Headless automated run without automatic reboot
+./install.sh --all --yes --no-reboot
 
 ## Post-Installation
 
@@ -290,7 +296,7 @@ All shell configurations, font definitions, and group memberships are **automate
 * **Docker Permissions**: Your user is added to the `docker` supplementary group.
 * **Terminal Iconography**: Alacritty is pre-configured with `Hack Nerd Font` to render the Fedora prompt logos and glyphs.
 
-To apply new group memberships and graphical session targets, simply reboot the system:
+To apply new group memberships and graphical session targets, reboot the system (automated when `--yes` is used, unless `--no-reboot` is passed):
 
 ```bash
 sudo reboot

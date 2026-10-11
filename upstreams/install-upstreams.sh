@@ -570,7 +570,7 @@ install_bloodhound() {
         sudo tee "$install_dir/bloodhound.config.json" >/dev/null <<EOF || { log_error "Could not write $install_dir/bloodhound.config.json."; return 0; }
 {
   "version": 1,
-  "bind_addr": "127.0.0.1:8080",
+  "bind_addr": "0.0.0.0:8080",
   "metrics_port": ":2112",
   "root_url": "http://127.0.0.1:8080/",
   "work_dir": "/opt/bloodhound/work",
@@ -590,7 +590,7 @@ install_bloodhound() {
     "last_name": "Admin",
     "email_address": "admin@example.com"
   }
-  }
+}
 EOF
         printf 'bhe_recreate_default_admin=true\n' | sudo tee "$install_dir/.env" >/dev/null || { log_error "Could not write $install_dir/.env."; return 0; }
         sudo chmod 600 "$install_dir/bloodhound.config.json" "$install_dir/.env" 2>/dev/null || true
