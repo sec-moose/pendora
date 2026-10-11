@@ -193,29 +193,40 @@ run_pipx_install() {
             sudo dnf install -y pipx
         fi
     fi
-    if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] pipx ensurepath"
-    else
-        pipx ensurepath 2>/dev/null || true
-    fi
-
-    log_info "Total pipx tools to install: ${#pipx_pkgs[@]}"
-    for tool in "${pipx_pkgs[@]}"; do
-        if [ "$DRY_RUN" = true ]; then
-            echo "  [DRY-RUN] pipx install $tool"
-        else
-            log_info "Running: pipx install $tool"
-            pipx install "$tool" || pipx upgrade "$tool" || log_warn "pipx install failed for: $tool"
-        fi
-    done
-    log_success "Pipx processing complete."
-
-    # Post-process Impacket: create convenience aliases and central /usr/local/bin/impacket launcher
     local target_user="${SUDO_USER:-$USER}"
     local target_home
     target_home="$(getent passwd "$target_user" 2>/dev/null | cut -d: -f6)"
     [ -z "$target_home" ] && target_home="$HOME"
     local pipx_bin_dir="${target_home}/.local/bin"
+
+    # Pipx must execute strictly as the standard user (never with root/sudo privileges).
+    # When install.sh is invoked via sudo, drop root privileges to the target standard user.
+    local pipx_runner=()
+    if [ -n "${SUDO_USER:-}" ] && [ "$EUID" -eq 0 ]; then
+        pipx_runner=(sudo -u "$target_user" env HOME="$target_home" USER="$target_user" PATH="$PATH:${target_home}/.local/bin")
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] ${pipx_runner[*]} pipx ensurepath"
+    else
+        "${pipx_runner[@]}" pipx ensurepath 2>/dev/null || true
+    fi
+
+    log_info "Total pipx tools to install: ${#pipx_pkgs[@]}"
+    for tool in "${pipx_pkgs[@]}"; do
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] ${pipx_runner[*]} pipx install $tool"
+        else
+            log_info "Running: pipx install $tool (as standard user $target_user)"
+            "${pipx_runner[@]}" pipx install "$tool" || \
+            "${pipx_runner[@]}" pipx upgrade "$tool" || \
+            "${pipx_runner[@]}" pipx install --force "$tool" || \
+            log_warn "pipx install failed for: $tool"
+        fi
+    done
+    log_success "Pipx processing complete."
+    # Post-process Impacket: create convenience aliases and central /usr/local/bin/impacket launcher
+    # target_user and target_home already resolved above
 
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] Create impacket-* convenience symlinks in ~/.local/bin (impacket- prefix only; stale bare aliases removed)"
@@ -398,14 +409,30 @@ stow_module() {
     esac
 
     # Execute stow as the target user to ensure proper symlink ownership;
-    # fall back to --adopt so pre-existing dotfiles don't abort the whole run
-    local stow_rc=0
+    # back up conflicting targets to timestamped backups to protect the git repository tree
+    local stow_cmd=(stow -d "$SCRIPT_DIR" -t "$target_home")
     if [ -n "${SUDO_USER:-}" ] && [ "$EUID" -eq 0 ]; then
-        sudo -u "$target_user" stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" 2>/dev/null || \
-        sudo -u "$target_user" stow -d "$SCRIPT_DIR" -t "$target_home" --adopt "$module" 2>/dev/null || stow_rc=$?
-    else
-        stow -d "$SCRIPT_DIR" -t "$target_home" -R "$module" 2>/dev/null || \
-        stow -d "$SCRIPT_DIR" -t "$target_home" --adopt "$module" 2>/dev/null || stow_rc=$?
+        stow_cmd=(sudo -u "$target_user" stow -d "$SCRIPT_DIR" -t "$target_home")
+    fi
+
+    local stow_rc=0
+    if ! "${stow_cmd[@]}" -R "$module" 2>/dev/null; then
+        # Restow failed due to conflict; scan for conflicting targets and back them up
+        log_warn "GNU Stow conflict detected for module '${module}'. Scanning for conflicting targets to back up..."
+        local conflict_targets
+        conflict_targets=$("${stow_cmd[@]}" -n -v "$module" 2>&1 | grep -E "cannot stow|existing target is" | awk '{print $NF}' | tr -d '*:\"' || true)
+        if [ -n "$conflict_targets" ]; then
+            while IFS= read -r cfile; do
+                [ -z "$cfile" ] && continue
+                local full_cpath="${target_home}/${cfile}"
+                if [ -e "$full_cpath" ] || [ -L "$full_cpath" ]; then
+                    local bak_path="${full_cpath}.bak.$(date +%Y%m%d_%H%M%S)"
+                    log_info "Backing up conflicting target: ${full_cpath} -> ${bak_path}"
+                    mv "$full_cpath" "$bak_path" 2>/dev/null || true
+                fi
+            done <<< "$conflict_targets"
+        fi
+        "${stow_cmd[@]}" -R "$module" 2>/dev/null || stow_rc=$?
     fi
     if [ "$stow_rc" -eq 0 ]; then
         log_success "Stowed module '${module}' successfully (symlinks in $target_home)."
@@ -891,7 +918,7 @@ if [ "$RUN_PACKAGES" = true ]; then
             [ -f "$list_file" ] && TARGET_FILES+=("$list_file")
         done
     elif [ "$INSTALL_SWAY" = true ] && [ "$RUN_BASIC" = false ]; then
-        TARGET_FILES+=("${LISTS_DIR}/70-sway.list")
+        TARGET_FILES+=("${LISTS_DIR}/00-base.list" "${LISTS_DIR}/70-sway.list")
     elif [ "$INSTALL_DOCKER_CONTAINERS" = true ] && [ "$RUN_BASIC" = false ]; then
         TARGET_FILES+=("${LISTS_DIR}/60-docker.list")
     else
@@ -907,6 +934,18 @@ if [ "$RUN_PACKAGES" = true ]; then
         case " ${TARGET_FILES[*]-} " in
             *"60-docker"*) ;;
             *) [ -f "${LISTS_DIR}/60-docker.list" ] && TARGET_FILES+=("${LISTS_DIR}/60-docker.list") ;;
+        esac
+    fi
+
+    # Ensure Base and Sway packages are included whenever Sway installation was requested
+    if [ "$INSTALL_SWAY" = true ] && [ "$RUN_BASIC" = false ] && [ "$RUN_ALL" = false ]; then
+        case " ${TARGET_FILES[*]-} " in
+            *"00-base"*) ;;
+            *) [ -f "${LISTS_DIR}/00-base.list" ] && TARGET_FILES+=("${LISTS_DIR}/00-base.list") ;;
+        esac
+        case " ${TARGET_FILES[*]-} " in
+            *"70-sway"*) ;;
+            *) [ -f "${LISTS_DIR}/70-sway.list" ] && TARGET_FILES+=("${LISTS_DIR}/70-sway.list") ;;
         esac
     fi
 

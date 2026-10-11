@@ -245,7 +245,7 @@ ${selinux_block}
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     ports:
-      - 9443:9443
+      - 127.0.0.1:9443:9443
       # - 8000:8000  # Remove if you do not intend to use Edge Agents
 
 volumes:
@@ -355,7 +355,9 @@ install_portainer() {
             echo -e "${YELLOW}  ⚠️  REMINDER: Access https://localhost:9443 to complete admin setup!${NC}"
             echo -e "${GREEN}${BOLD}====================================================${NC}"
             echo
-            read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _
+            if [ "$ASSUME_YES" = false ]; then
+                read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _ || true
+            fi
             return 0
         fi
 
@@ -409,7 +411,9 @@ EOF
         echo -e "${YELLOW}  ⚠️  REMINDER: Complete the initial admin setup in the web UI within 5 minutes - the Setup Token above expires after that!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo
-        read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _
+        if [ "$ASSUME_YES" = false ]; then
+            read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _ || true
+        fi
         log_success "Portainer CE deployed successfully! Web interface: https://localhost:9443"
     fi
 }
@@ -488,7 +492,7 @@ install_sysreptor() {
             /opt/sysreptor/sysreptor/deploy/docker-compose.yml \
             /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml \
             /opt/sysreptor/sysreptor/deploy/languagetool/docker-compose.yml 2>/dev/null || true
-        sudo docker update --restart=no $(sudo docker ps -aq --filter "name=sysreptor") 2>/dev/null || true
+        sudo docker update --restart=no $(cd /opt/sysreptor/sysreptor/deploy 2>/dev/null && sudo docker compose ps -q 2>/dev/null) 2>/dev/null || true
 
         # Reset the reptor password to a fresh generated value so the banner always shows working
         # cleartext credentials (the installer prints its generated password only once, and older
@@ -511,10 +515,6 @@ install_sysreptor() {
             new_pw="(could not reset automatically - see ${install_dir}/admin_install.log for the installer's original password, or reset with: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec app python3 manage.py changepassword reptor)"
         fi
 
-        if [ "$reset_ok" = true ]; then
-            printf 'Web URL:   http://localhost:8000\nUsername:  reptor\nPassword:  %s\n' "${new_pw}" | sudo tee "$creds_file" >/dev/null || log_warn "Could not write $creds_file."
-            sudo chmod 600 "$creds_file" 2>/dev/null || true
-        fi
 
         echo
         echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -527,7 +527,9 @@ install_sysreptor() {
         echo -e "${YELLOW}  ⚠️  REMINDER: Please change this password on first login!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo
-        read -rp "Please copy your username and password above. Press [Enter] to continue: " _
+        if [ "$ASSUME_YES" = false ]; then
+            read -rp "Please copy your username and password above. Press [Enter] to continue: " _ || true
+        fi
         log_success "SysReptor deployment completed! Web interface: http://localhost:8000"
     fi
 }
@@ -568,7 +570,7 @@ install_bloodhound() {
         sudo tee "$install_dir/bloodhound.config.json" >/dev/null <<EOF || { log_error "Could not write $install_dir/bloodhound.config.json."; return 0; }
 {
   "version": 1,
-  "bind_addr": "0.0.0.0:8080",
+  "bind_addr": "127.0.0.1:8080",
   "metrics_port": ":2112",
   "root_url": "http://127.0.0.1:8080/",
   "work_dir": "/opt/bloodhound/work",
@@ -591,6 +593,11 @@ install_bloodhound() {
   }
 EOF
         printf 'bhe_recreate_default_admin=true\n' | sudo tee "$install_dir/.env" >/dev/null || { log_error "Could not write $install_dir/.env."; return 0; }
+        sudo chmod 600 "$install_dir/bloodhound.config.json" "$install_dir/.env" 2>/dev/null || true
+        sudo chmod 750 "$install_dir" 2>/dev/null || true
+
+        # Restrict port binding to localhost loopback in docker-compose.yml
+        sudo sed -i 's|[[:space:]]*- 8080:8080|      - 127.0.0.1:8080:8080|g; s|[[:space:]]*- "8080:8080"|      - "127.0.0.1:8080:8080"|g' "$install_dir/docker-compose.yml" 2>/dev/null || true
 
         # Enable the commented-out config mount in the compose file (idempotent)
         sudo sed -i 's|^    # volumes:$|    volumes:|; s|^    #   - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$|      - ./bloodhound.config.json:/bloodhound.config.json:ro|' "$install_dir/docker-compose.yml"
@@ -658,7 +665,9 @@ EOF
         echo -e "${YELLOW}  ⚠️  REMINDER: You must change this password on first login!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo
-        read -rp "Please copy your username and password above. Press [Enter] to continue: " _
+        if [ "$ASSUME_YES" = false ]; then
+            read -rp "Please copy your username and password above. Press [Enter] to continue: " _ || true
+        fi
 
         log_success "BloodHound CE deployed successfully! Web interface: http://localhost:8080"
         log_info "BloodHound stack and volumes are fully manageable in Portainer (https://localhost:9443)."
@@ -807,52 +816,59 @@ if [ "$ASSUME_YES" = false ] && [ "$DRY_RUN" = false ]; then
     [[ "$confirm" =~ ^[Yy]$ ]] || { log_warn "Aborted by user."; exit 0; }
 fi
 
+declare -a FAILED_TOOLS=()
+
 for tool in "${TOOLS[@]}"; do
     case "$tool" in
         metasploit)
-            install_metasploit
+            install_metasploit || FAILED_TOOLS+=("metasploit")
             ;;
         burpsuite)
-            install_burpsuite
+            install_burpsuite || FAILED_TOOLS+=("burpsuite")
             ;;
         seclists)
-            install_seclists
+            install_seclists || FAILED_TOOLS+=("seclists")
             ;;
         evil-winrm)
-            install_evil_winrm
+            install_evil_winrm || FAILED_TOOLS+=("evil-winrm")
             ;;
         zap)
-            install_zap
+            install_zap || FAILED_TOOLS+=("zap")
             ;;
         hack-font|font)
-            install_hack_font
+            install_hack_font || FAILED_TOOLS+=("hack-font")
             ;;
         rustscan)
-            install_rustscan
+            install_rustscan || FAILED_TOOLS+=("rustscan")
             ;;
         naabu)
-            install_naabu
+            install_naabu || FAILED_TOOLS+=("naabu")
             ;;
         portainer)
-            install_portainer
+            install_portainer || FAILED_TOOLS+=("portainer")
             ;;
         sysreptor)
-            install_sysreptor
+            install_sysreptor || FAILED_TOOLS+=("sysreptor")
             ;;
         bloodhound)
-            install_bloodhound
+            install_bloodhound || FAILED_TOOLS+=("bloodhound")
             ;;
         devtunnel|devtunnels)
-            install_devtunnel
+            install_devtunnel || FAILED_TOOLS+=("devtunnel")
             ;;
         responder)
-            install_responder
+            install_responder || FAILED_TOOLS+=("responder")
             ;;
         *)
             log_error "Unknown tool: $tool"
-            exit 1
+            FAILED_TOOLS+=("$tool")
             ;;
     esac
 done
 
-log_success "All requested upstream tools processed."
+if [ ${#FAILED_TOOLS[@]} -gt 0 ]; then
+    log_error "The following upstream tool(s) encountered errors: ${FAILED_TOOLS[*]}"
+    exit 1
+fi
+
+log_success "All requested upstream tools processed successfully."
