@@ -419,94 +419,102 @@ install_sysreptor() {
     local installer_script
     installer_script="$(mktemp)"
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] sudo mkdir -p '$install_dir'"
-        echo "  [DRY-RUN] sed -i 's/read -p \"Copy your password.*/CONFIRM=\"y\"/g' '$installer_script'"
-        echo "  [DRY-RUN] sed -i 's/read -p .*/true/g' '$installer_script'"
-        echo "  [DRY-RUN] cd '$install_dir' && sudo env SYSREPTOR_ENCRYPT='n' CONFIRM='y' CONFIRM_AUTOUPDATE='n' bash '$installer_script'"
+        echo "  [DRY-RUN] Existing stack: start via compose (/opt/sysreptor/sysreptor/deploy); fresh: download + run official installer unattended"
+        echo "  [DRY-RUN] Strip restart policies (no auto-start after reboot) and set containers to restart=no"
+        echo "  [DRY-RUN] Reset the reptor password to a fresh generated value (docker compose exec app manage.py shell)"
         echo "  [DRY-RUN] Display credentials banner and prompt user to copy before continuing"
         echo "  [DRY-RUN] SysReptor interface will be accessible at: http://localhost:8000"
     else
         ensure_docker_ready || return 1
         local creds_file="${install_dir}/admin_credentials.txt"
 
-        # If a SysReptor stack already exists (running or stopped - it intentionally does not auto-start
-        # after reboot), start it and show the saved credentials instead of re-running the installer,
-        # which exits on existing volumes and would overwrite the credentials file without a password.
-        local existing_stack
-        existing_stack=$(sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -c "^sysreptor" || true)
-        if [ "${existing_stack:-0}" -gt 0 ]; then
-            if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^sysreptor-app"; then
+        # Detect a previous SysReptor deployment by its compose file or containers (the compose
+        # project is named after the deploy directory, so container names are not stable).
+        local deploy_compose="/opt/sysreptor/sysreptor/deploy/docker-compose.yml"
+        local preexisting=false
+        if [ -f "$deploy_compose" ] || sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qi "sysreptor"; then
+            preexisting=true
+        fi
+        if [ "$preexisting" = true ]; then
+            if (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose ps -q app 2>/dev/null | grep -q .); then
                 log_success "SysReptor container stack is already running! Web interface: http://localhost:8000"
             else
                 log_info "SysReptor stack exists but is stopped - starting it..."
-                local start_rc=0
-                if [ -f /opt/sysreptor/sysreptor/deploy/docker-compose.yml ]; then
-                    (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d) 2>/dev/null || start_rc=1
-                else
-                    sudo docker start $(sudo docker ps -aq --filter "name=sysreptor") 2>/dev/null || start_rc=1
-                fi
-                if [ "$start_rc" -eq 0 ]; then
+                if (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d) 2>/dev/null; then
                     log_success "SysReptor container stack started! Web interface: http://localhost:8000"
                 else
                     log_warn "Could not start the SysReptor stack; start it via Portainer or: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d"
                 fi
             fi
-            local existing_pw
-            existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
-            if [ -z "$existing_pw" ]; then
-                existing_pw="(not stored - reset with: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec app python3 manage.py changepassword reptor)"
+        else
+            sudo mkdir -p "$install_dir"
+            log_info "Downloading official SysReptor installer..."
+            curl -fsSL https://docs.sysreptor.com/install.sh -o "$installer_script"
+            chmod +x "$installer_script"
+
+            # Neutralize all interactive read prompts with automated responses to avoid infinite while-loops
+            sed -i 's/read -p "Copy your password.*/CONFIRM="y"/g' "$installer_script"
+            sed -i 's/read -p "Backup your encryption.*/CONFIRM="y"/g' "$installer_script"
+            sed -i 's/read -p "Enable automatic updates.*/CONFIRM_AUTOUPDATE="n"/g' "$installer_script"
+            sed -i 's/read -p "Encrypt files and database.*/SYSREPTOR_ENCRYPT="n"/g' "$installer_script"
+            sed -i 's/read -p .*/true/g' "$installer_script"
+
+            log_info "Running SysReptor installer in unattended mode (Community Edition)..."
+
+            local installer_rc=0
+            (
+                cd "$install_dir"
+                sudo env \
+                    SYSREPTOR_LICENSE="" \
+                    SYSREPTOR_ENCRYPT="n" \
+                    CONFIRM="y" \
+                    CONFIRM_AUTOUPDATE="n" \
+                    bash "$installer_script"
+            ) 2>&1 | sudo tee "${install_dir}/admin_install.log" || installer_rc=$?
+            sudo chmod 600 "${install_dir}/admin_install.log" 2>/dev/null || true
+
+            # Cleanup temporary installer script
+            rm -f "$installer_script"
+
+            if [ "$installer_rc" -ne 0 ]; then
+                log_error "SysReptor installer exited with status ${installer_rc} (see ${install_dir}/admin_install.log). If this is 'Old SysReptor volumes exist', the previous data is preserved - removing the old volumes deletes that data; resolve and re-run."
+                return 0
             fi
-            echo
-            echo -e "${GREEN}${BOLD}====================================================${NC}"
-            echo -e "${GREEN}${BOLD}SysReptor Credentials${NC}"
-            echo -e "${GREEN}${BOLD}====================================================${NC}"
-            echo -e "  Web URL:   ${BOLD}http://localhost:8000${NC}"
-            echo -e "  Username:  ${BOLD}reptor${NC}"
-            echo -e "  Password:  ${BOLD}${existing_pw}${NC}"
-            echo -e "  Saved to:  ${creds_file}"
-            echo -e "${YELLOW}  ⚠️  REMINDER: Please change this password on first login!${NC}"
-            echo -e "${GREEN}${BOLD}====================================================${NC}"
-            echo
-            read -rp "Please copy your username and password above. Press [Enter] to continue: " _
-            return 0
         fi
 
-        sudo mkdir -p "$install_dir"
-        log_info "Downloading official SysReptor installer..."
-        curl -fsSL https://docs.sysreptor.com/install.sh -o "$installer_script"
-        chmod +x "$installer_script"
+        # SysReptor must not auto-start after reboot: strip restart policies from the compose
+        # files and set the containers to restart=no (the stack is started on demand instead)
+        sudo sed -i '/^[[:space:]]*restart:[[:space:]]/d' \
+            /opt/sysreptor/sysreptor/deploy/docker-compose.yml \
+            /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml \
+            /opt/sysreptor/sysreptor/deploy/languagetool/docker-compose.yml 2>/dev/null || true
+        sudo docker update --restart=no $(sudo docker ps -aq --filter "name=sysreptor") 2>/dev/null || true
 
-        # Neutralize all interactive read prompts with automated responses to avoid infinite while-loops
-        sed -i 's/read -p "Copy your password.*/CONFIRM="y"/g' "$installer_script"
-        sed -i 's/read -p "Backup your encryption.*/CONFIRM="y"/g' "$installer_script"
-        sed -i 's/read -p "Enable automatic updates.*/CONFIRM_AUTOUPDATE="n"/g' "$installer_script"
-        sed -i 's/read -p "Encrypt files and database.*/SYSREPTOR_ENCRYPT="n"/g' "$installer_script"
-        sed -i 's/read -p .*/true/g' "$installer_script"
-
-        log_info "Running SysReptor installer in unattended mode (Community Edition)..."
-
-        local installer_rc=0
-        (
-            cd "$install_dir"
-            sudo env \
-                SYSREPTOR_LICENSE="" \
-                SYSREPTOR_ENCRYPT="n" \
-                CONFIRM="y" \
-                CONFIRM_AUTOUPDATE="n" \
-                bash "$installer_script"
-        ) 2>&1 | sudo tee "$creds_file" || installer_rc=$?
-        if [ "$installer_rc" -ne 0 ]; then
-            log_warn "SysReptor installer exited with status ${installer_rc}; deployment may be incomplete (see output above and $creds_file)."
+        # Reset the reptor password to a fresh generated value so the banner always shows working
+        # cleartext credentials (the installer prints its generated password only once, and older
+        # credentials files may no longer contain a valid password)
+        local new_pw
+        new_pw="$(openssl rand -base64 20 | tr -d '\r\n=')"
+        local reset_ok=false
+        local attempt
+        for attempt in 1 2 3 4 5; do
+            if (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec -T app python3 manage.py shell -c "from django.contrib.auth import get_user_model; from django.contrib.auth.hashers import make_password; u = get_user_model().objects.filter(username='reptor').first(); u.password = make_password('${new_pw}'); u.save(); print('PASSWORD-RESET-OK')") 2>/dev/null | grep -q "PASSWORD-RESET-OK"; then
+                reset_ok=true
+                break
+            fi
+            sleep 3
+        done
+        if [ "$reset_ok" = true ]; then
+            printf 'Web URL:   http://localhost:8000\nUsername:  reptor\nPassword:  %s\n' "${new_pw}" | sudo tee "$creds_file" >/dev/null || log_warn "Could not write $creds_file."
+            sudo chmod 600 "$creds_file" 2>/dev/null || true
+        else
+            new_pw="(could not reset automatically - see ${install_dir}/admin_install.log for the installer's original password, or reset with: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec app python3 manage.py changepassword reptor)"
         fi
-        sudo chmod 600 "$creds_file" || log_warn "Could not restrict permissions on $creds_file (sudo may require re-authentication); run 'sudo chmod 600 $creds_file' manually."
 
-        # Cleanup temporary installer script
-        rm -f "$installer_script"
-
-        # Extract generated superuser credentials
-        local generated_pw
-        generated_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
-        [ -z "$generated_pw" ] && generated_pw="Check $creds_file"
+        if [ "$reset_ok" = true ]; then
+            printf 'Web URL:   http://localhost:8000\nUsername:  reptor\nPassword:  %s\n' "${new_pw}" | sudo tee "$creds_file" >/dev/null || log_warn "Could not write $creds_file."
+            sudo chmod 600 "$creds_file" 2>/dev/null || true
+        fi
 
         echo
         echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -514,7 +522,7 @@ install_sysreptor() {
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo -e "  Web URL:   ${BOLD}http://localhost:8000${NC}"
         echo -e "  Username:  ${BOLD}reptor${NC}"
-        echo -e "  Password:  ${BOLD}${generated_pw}${NC}"
+        echo -e "  Password:  ${BOLD}${new_pw}${NC}"
         echo -e "  Saved to:  ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: Please change this password on first login!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -538,58 +546,25 @@ install_bloodhound() {
     else
         ensure_docker_ready || return 1
 
-        # If a BloodHound stack already exists (running or stopped - it intentionally does not auto-start
-        # after reboot), start it and show the saved credentials instead of re-deploying: re-deploying
-        # rewrites bloodhound.config.json with a NEW random password while the existing volumes keep the
-        # original one, which would lock the operator out of known credentials.
-        local existing_stack
-        existing_stack=$(sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -c "^bloodhound" || true)
-        if [ "${existing_stack:-0}" -gt 0 ]; then
-            local start_rc=0
-            if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^bloodhound"; then
-                log_success "BloodHound CE container stack is already running! Web interface: http://localhost:8080"
-            else
-                log_info "BloodHound stack exists but is stopped - starting it..."
-                (cd "$install_dir" && sudo docker compose up -d) 2>/dev/null || start_rc=1
-                if [ "$start_rc" -eq 0 ]; then
-                    log_success "BloodHound container stack started! Web interface: http://localhost:8080"
-                else
-                    log_warn "Could not start the BloodHound stack; start it via Portainer or: cd $install_dir && sudo docker compose up -d"
-                fi
-            fi
-            # No restart policy is enforced: the stack intentionally does not auto-start after reboot.
-            log_info "BloodHound CE container status:"
-            sudo docker ps -a --filter "name=bloodhound" --format '  {{.Names}}: {{.Status}}' 2>/dev/null || true
-            local existing_pw
-            existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n' || true)
-            if [ -z "$existing_pw" ]; then
-                existing_pw="(not stored - check 'cd $install_dir && sudo docker compose logs bloodhound' or reset the admin password in the BloodHound UI)"
-            fi
-            echo
-            echo -e "${GREEN}${BOLD}====================================================${NC}"
-            echo -e "${GREEN}${BOLD}BloodHound CE Credentials${NC}"
-            echo -e "${GREEN}${BOLD}====================================================${NC}"
-            echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC}"
-            echo -e "  Username:  ${BOLD}admin${NC}"
-            echo -e "  Password:  ${BOLD}${existing_pw}${NC}"
-            echo -e "  Saved to:  ${creds_file}"
-            echo -e "${YELLOW}  ⚠️  REMINDER: You must change this password on first login!${NC}"
-            echo -e "${GREEN}${BOLD}====================================================${NC}"
-            echo
-            read -rp "Please copy your username and password above. Press [Enter] to continue: " _
-            return 0
-        fi
+        # Single converging path: every run deploys/refreshes the stack and resets the admin
+        # password to a fresh generated value, so the banner credentials always work - even when
+        # data volumes predate this deployment (bhe_recreate_default_admin=true makes the app
+        # re-create the default admin with the config password on startup).
 
         sudo mkdir -p "$install_dir"
-        log_info "Downloading official BloodHound CE docker-compose.yml to $install_dir..."
-        sudo curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "$install_dir/docker-compose.yml" \
-            https://raw.githubusercontent.com/SpecterOps/BloodHound/main/examples/docker-compose/docker-compose.yml \
-            || { log_error "Could not download the BloodHound CE compose file; skipping BloodHound CE deployment."; return 0; }
+        if [ ! -f "$install_dir/docker-compose.yml" ]; then
+            log_info "Downloading official BloodHound CE docker-compose.yml to $install_dir..."
+            sudo curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "$install_dir/docker-compose.yml" \
+                https://raw.githubusercontent.com/SpecterOps/BloodHound/main/examples/docker-compose/docker-compose.yml \
+                || { log_error "Could not download the BloodHound CE compose file; skipping BloodHound CE deployment."; return 0; }
+        fi
 
-        # Deterministic initial admin password via the documented config-file mount
+        # Fresh admin password on EVERY run; bhe_recreate_default_admin=true makes the container
+        # re-create the default admin with that password on startup. Each run invalidates the
+        # previous generated password (change it in the UI if you want it to stick across runs).
         local initial_pw
         initial_pw="$(openssl rand -base64 20 | tr -d '\r\n=')"
-        log_info "Writing bloodhound.config.json (sets the initial admin password)..."
+        log_info "Writing bloodhound.config.json + .env (admin password is reset to a fresh value on every run)..."
         sudo tee "$install_dir/bloodhound.config.json" >/dev/null <<EOF || { log_error "Could not write $install_dir/bloodhound.config.json."; return 0; }
 {
   "version": 1,
@@ -608,13 +583,16 @@ install_bloodhound() {
   "default_admin": {
     "enabled": true,
     "principal_name": "admin",
+    "password": "$initial_pw",
     "first_name": "BloodHound",
     "last_name": "Admin",
     "email_address": "admin@example.com"
   }
   }
 EOF
-        # Enable the commented-out config mount in the compose file (docs: custom-installation)
+        printf 'bhe_recreate_default_admin=true\n' | sudo tee "$install_dir/.env" >/dev/null || { log_error "Could not write $install_dir/.env."; return 0; }
+
+        # Enable the commented-out config mount in the compose file (idempotent)
         sudo sed -i 's|^    # volumes:$|    volumes:|; s|^    #   - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$|      - ./bloodhound.config.json:/bloodhound.config.json:ro|' "$install_dir/docker-compose.yml"
         if ! sudo grep -q '^      - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$' "$install_dir/docker-compose.yml"; then
             log_error "Could not enable the bloodhound.config.json mount in docker-compose.yml; skipping BloodHound CE deployment."
@@ -625,7 +603,7 @@ EOF
         local compose_rc=1
         local attempt
         for attempt in 1 2 3; do
-            if (cd "$install_dir" && sudo docker compose up -d); then
+            if (cd "$install_dir" && sudo docker compose up -d --force-recreate); then
                 compose_rc=0
                 break
             fi
@@ -635,7 +613,7 @@ EOF
             fi
         done
         if [ "$compose_rc" -ne 0 ]; then
-            log_error "BloodHound CE deployment failed after 3 attempts (image pull network error). Check connectivity and re-run 'pendora containers', or deploy manually: cd $install_dir && sudo docker compose up -d"
+            log_error "BloodHound CE deployment failed after 3 attempts (image pull network error). Check connectivity and re-run 'pendora containers', or deploy manually: cd $install_dir && sudo docker compose up -d --force-recreate"
             return 0
         fi
 
