@@ -8,7 +8,20 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
 
 - [ ] **Sway VM Display Auto-Rescaling**:
   - Investigate dynamic display rescaling on window drag under QEMU/SPICE virtual machines (currently defaults to fixed `1080p` in `sway/.config/sway/config`). Note: dynamic resizing was attempted (`7a77b8c`) and reverted to 1080p (`a73643d`) — document why before retrying; see README "Known Issues".
+- [ ] **SPICE Clipboard Bridge & User-Session De-duplication**:
+  - Resolve the dual invocation of `sway-spice-clipboard-bridge` (currently launched both via Sway's `exec` autostart in `sway/.config/sway/config` and via `systemd/user/sway-spice-clipboard-bridge.service`). Standardize on a single lifecycle mechanism to prevent redundant background Python processes contending for the SPICE clipboard socket.
 
+---
+
+## 🧪 Testing & Quality Assurance
+
+- [ ] **Thorough Testing of Included Tools and Configurations**:
+  - Comprehensive testing of native Fedora RPM binaries in `$PATH` (e.g. `nmap`, `tcpdump`, `wireshark`, `ffuf`, `hydra`, `john`).
+  - Functional validation of all 11 pipx offensive utilities (`netexec`, `impacket-*` symlinks, `/usr/local/bin/impacket` launcher, `certipy-ad`, `bloodhound-ce`, `sqlmap`).
+  - Operational testing of standalone upstream CLI wrappers and wordlists (`rustscan`, `naabu`, `devtunnel`, `responder`, `msfconsole`, `/usr/share/wordlists/seclists`).
+  - Validation of Sway desktop configuration, window manager hotkeys (`$mod+t`, `$mod+Shift+Arrows`), Noctalia bar widgets, SPICE host/guest clipboard bridge, and Neovim LazyVim plugin bootstrap.
+- [ ] **Automated Post-Install Verification Harness (`./install.sh --test` / `--verify`)**:
+  - Implement an automated health-check suite and CLI subcommand that verifies all RPM binaries, smoke-tests all 11 pipx offensive tools, validates `/usr/local/bin` wrappers, and checks HTTP health across the three local container ports (`127.0.0.1:9443`, `8000`, `8080`).
 ---
 
 ## 🛠️ Tooling & Upstream Additions
@@ -47,8 +60,8 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
   - Both stacks intentionally do not auto-start after reboot. Decide: keep manual start (document it in README + TOOL_REFERENCE) or pin `restart: unless-stopped` in the generated compose files so behavior matches Portainer's documented `restart: always`.
 - [ ] **SysReptor / BloodHound Start-on-Demand Documentation**:
   - Re-running `./install-upstreams.sh sysreptor` starts a stopped stack automatically; `assets/TOOL_REFERENCE.md` (dashboard table + "Manage all containers via Docker") never tells users how to start the stacks after a reboot — document the start commands.
-- [ ] **Self-Check / Verification Subcommand**:
-  - Add `./install.sh --verify` to test if all tools, services, and symlinks are installed and responsive (precedent: `portainer_test_deployment()`).
+- [ ] **Cryptographic Checksum Verification (SHA-256) for Standalone Downloads**:
+  - Pin known SHA-256 release hashes (or fetch official `.sha256` sums) for GitHub release binaries (`rustscan`, `naabu`, `Hack Nerd Font`), Microsoft Dev Tunnels, and SysReptor installer before deploying to `/usr/local/bin` or executing under `sudo`.
 - [ ] **Modular Uninstall / Cleanup**:
   - Add `./install.sh --clean` or module removal option to safely un-stow configurations and purge unused cache files.
 - [ ] **Air-Gapped / Offline Deployment**:
