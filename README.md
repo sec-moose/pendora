@@ -1,7 +1,7 @@
 # Pendora <img src="assets/logo.svg" width="34" height="34" alt="Pendora" style="vertical-align: middle;" />
 
 > ⚠️ **Beta Branch Disclaimer**
-> This branch is unstable and will receive potentially unstable and script-breaking updates without notice. For the stable version, see the [main branch](https://github.com/sec-moose/pendora/tree/main).
+> The `beta` branch is unstable and will receive potentially unstable and script-breaking updates without notice. For stable releases, see the [Releases page](https://github.com/sec-moose/pendora/releases) or the `master` branch.
 
 🌐 **Official Website**: [https://pendora.tech](https://pendora.tech) &nbsp;|&nbsp; ❓ **FAQ**: [https://pendora.tech/#faq](https://pendora.tech/#faq)
 
@@ -62,13 +62,13 @@ Pendora provides full flexibility over your graphical environment. You can choos
 > Installing Sway does not remove or alter your GNOME desktop. You can seamlessly switch between **GNOME** and **Sway** at any time on the login screen (GDM): click your username, select the gear icon (⚙️) in the bottom-right corner, and select your desired session before entering your password.
 > 💡 **Testing Status & Recommendations:**  
 > * **Tested & Verified — Full Installation (`./install.sh --all` / `--all --yes`)**: End-to-end single-pass deployment verifying all native security packages (00–70), Pipx tools, Upstream suites, Docker containers, and the Sway tiling desktop environment.
-> * **Tested & Verified — Sway Dynamic Desktop (`./install.sh --sway`)**: Deploys the lightweight Sway tiling compositor, Noctalia desktop shell, Hack Nerd Font, focus-based window opacity, crisp 1080p display rendering, automatic GNOME keyboard layout inheritance, and bidirectional SPICE host/guest clipboard sharing. 100% native Fedora RPMs (zero COPR repositories required).
+> * **Tested & Verified — Sway Dynamic Desktop (`./install.sh --sway`)**: Deploys the lightweight Sway tiling compositor, Noctalia desktop shell, Hack Nerd Font, focus-based window opacity, crisp 1080p display rendering, automatic GNOME keyboard layout inheritance, and bidirectional SPICE host/guest clipboard sharing. The Sway package stack is 100% native Fedora RPMs (zero COPR repositories required); the Hack Nerd Font is fetched from its official GitHub release.
 > * **Tested & Verified — Basic Pentest Setup (`./install.sh --basic`)**: Keeps your default Fedora GNOME desktop intact while deploying all pentest CLI tools, Pipx tools, Docker container suites, Zsh, Neovim, and Alacritty.
 
 | Mode | Flag | Validation Status | Included Components |
 |---|---|---|---|
 | **Full Desktop** | `--all` (`-a`) | **Tested & Verified** | Single-pass combination of everything in Basic **plus** Sway desktop stack (`70-sway.list`, Sway/Noctalia dotfiles, screensharing portal services). |
-| **Sway Desktop** | `--sway` (`-W`) | **Tested & Verified** | Installs `70-sway.list`, sets up screensharing user unit, deploys Sway & Noctalia configuration (Pendora theme), focus opacity daemon, GNOME keyboard auto-sync, Zsh, Neovim, Alacritty, and custom wallpapers. |
+| **Sway Desktop** | `--sway` (`-W`) | **Tested & Verified** | Installs `00-base.list` + `70-sway.list`, sets the hostname to `pendora`, sets up screensharing user unit, deploys Sway & Noctalia configuration (Pendora theme), focus opacity daemon, GNOME keyboard auto-sync, Zsh, Neovim, Alacritty, and custom wallpapers. |
 | **Basic Pentest** | `--basic` (`-b`) | **Tested & Verified** | Retains existing GNOME desktop. Deploys all pentest packages (00–60), Pipx tools, Docker containers, Kali Zsh prompt, Alacritty, Neovim/LazyVim, hostname, and wallpapers. **Zero desktop/window manager changes.** |
 
 <p align="center">
@@ -245,6 +245,7 @@ Install only the specific components you need:
 # Set system hostname to 'pendora'
 ./install.sh --hostname
 # Run all standalone upstream installers directly (Metasploit, Burp, SecLists, etc.)
+# Note: this also deploys the Docker container stacks (Portainer, SysReptor, BloodHound)
 ./install.sh --upstreams
 
 # Install packages from a custom package list file

@@ -109,9 +109,11 @@ A quick-reference summary for every tool category, standalone suite, and contain
 
 * **Manage all containers via Docker**:
   ```bash
-  docker ps                                     # View running containers
-  cd /opt/sysreptor && docker compose logs -f   # SysReptor container logs
-  cd /opt/bloodhound && docker compose logs -f  # BloodHound container logs
+  docker ps                                                          # View running containers
+  cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d    # Start SysReptor after a reboot
+  cd /opt/bloodhound && sudo docker compose up -d                    # Start BloodHound after a reboot
+  cd /opt/sysreptor/sysreptor/deploy && sudo docker compose logs -f  # SysReptor container logs
+  cd /opt/bloodhound && sudo docker compose logs -f                  # BloodHound container logs
   ```
 
 ---

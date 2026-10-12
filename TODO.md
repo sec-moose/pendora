@@ -9,7 +9,7 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
 - [ ] **Sway VM Display Auto-Rescaling**:
   - Investigate dynamic display rescaling on window drag under QEMU/SPICE virtual machines (currently defaults to fixed `1080p` in `sway/.config/sway/config`). Note: dynamic resizing was attempted (`7a77b8c`) and reverted to 1080p (`a73643d`) — document why before retrying; see README "Known Issues".
 - [ ] **SPICE Clipboard Bridge & User-Session De-duplication**:
-  - Resolve the dual invocation of `sway-spice-clipboard-bridge` (currently launched both via Sway's `exec` autostart in `sway/.config/sway/config` and via `systemd/user/sway-spice-clipboard-bridge.service`). Standardize on a single lifecycle mechanism to prevent redundant background Python processes contending for the SPICE clipboard socket.
+  - Resolve the dual invocation of `sway-spice-clipboard-bridge` (currently launched both via Sway's `exec` autostart in `sway/.config/sway/config` and via `systemd/user/sway-spice-clipboard-bridge.service`). Standardize on a single lifecycle mechanism; a script-level `flock` singleton already makes duplicate instances exit immediately, so the current impact is a briefly spawned redundant process per session rather than SPICE socket contention.
 
 ---
 
@@ -58,8 +58,8 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
 
 - [ ] **Container Restart-Policy Decision (SysReptor / BloodHound)**:
   - Both stacks intentionally do not auto-start after reboot. Decide: keep manual start (document it in README + TOOL_REFERENCE) or pin `restart: unless-stopped` in the generated compose files so behavior matches Portainer's documented `restart: always`.
-- [ ] **SysReptor / BloodHound Start-on-Demand Documentation**:
-  - Re-running `./install-upstreams.sh sysreptor` starts a stopped stack automatically; `assets/TOOL_REFERENCE.md` (dashboard table + "Manage all containers via Docker") never tells users how to start the stacks after a reboot — document the start commands.
+- [x] **SysReptor / BloodHound Start-on-Demand Documentation**:
+  - Re-running `./install-upstreams.sh sysreptor` starts a stopped stack automatically; `assets/TOOL_REFERENCE.md` (dashboard table + "Manage all containers via Docker") now documents the post-reboot start commands (`docker compose up -d`) alongside the log commands.
 - [ ] **Cryptographic Checksum Verification (SHA-256) for Standalone Downloads**:
   - Pin known SHA-256 release hashes (or fetch official `.sha256` sums) for GitHub release binaries (`rustscan`, `naabu`, `Hack Nerd Font`), Microsoft Dev Tunnels, and SysReptor installer before deploying to `/usr/local/bin` or executing under `sudo`.
 - [ ] **Modular Uninstall / Cleanup**:
