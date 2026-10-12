@@ -1,4 +1,8 @@
 # Pendora <img src="assets/logo.svg" width="34" height="34" alt="Pendora" style="vertical-align: middle;" />
+
+> ⚠️ **Beta Branch Disclaimer**
+> The `beta` branch is unstable and will receive potentially unstable and script-breaking updates without notice. For stable releases, see the [Releases page](https://github.com/sec-moose/pendora/releases) or the `master` branch.
+
 🌐 **Official Website**: [https://pendora.tech](https://pendora.tech) &nbsp;|&nbsp; ❓ **FAQ**: [https://pendora.tech/#faq](https://pendora.tech/#faq)
 
 [![Website](https://img.shields.io/badge/Website-pendora.tech-51A2DA?style=flat-square&logo=firefox&logoColor=white)](https://pendora.tech/)
@@ -37,13 +41,13 @@ Pendora organizes tooling, services, and configuration into four dedicated tiers
 │ 1. Native DNF RPM │ 2. Pipx Isolated  │ 3. Containers  │ 4. Shell &    │
 │    (pkg-lists/)   │    (pipx-lists/)  │    & Upstreams │    Look-&-Feel│
 │                   │                   │   (upstreams/) │    (zsh/)     │
-│ 109 Fedora pkgs   │ 11 Python tools   │ Portainer:7999 │ Zsh setup     │
+│ 131 Fedora pkgs   │ 11 Python tools   │ Portainer:9443 │ Zsh setup     │
 │ Scanners, debug,  │ netexec, impacket │ SysReptor:8000 │ Completions   │
-│ compilers, sniff  │ responder, sqlmap │ BloodHound:8080│ Aliases, hl   │
+│ compilers, sniff  │ mitmproxy, sqlmap │ BloodHound:8080│ Aliases, hl   │
 └───────────────────┴───────────────────┴────────────────┴───────────────┘
 ```
 
-1. **Native Fedora RPMs (`pkg-lists/`)**: 109 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, and forensics.
+1. **Native Fedora RPMs (`pkg-lists/`)**: 131 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, and forensics.
 2. **Pipx Isolated Python Tools (`pipx-lists/`)**: Offensive Python utilities requiring isolated environments to prevent library conflicts with system Python (`netexec`, `impacket`, `certipy-ad`, `bloodhound-ce`, `updog`, `sqlmap`, etc.).
 3. **Standalone Upstreams & Containers (`upstreams/`)**: Vendor installers, git clones, and Docker containers for enterprise suites (`metasploit`, `burpsuite`, `seclists`, `evil-winrm`, `zap`, `hack-font`, `rustscan`, `naabu`, `portainer`, `sysreptor`, `bloodhound`, `devtunnel`, `responder`).
 4. **Interactive Shell Environment (`zsh/`)**: Interactive Zsh configuration with autosuggestions, syntax highlighting, and pentesting aliases.
@@ -58,13 +62,13 @@ Pendora provides full flexibility over your graphical environment. You can choos
 > Installing Sway does not remove or alter your GNOME desktop. You can seamlessly switch between **GNOME** and **Sway** at any time on the login screen (GDM): click your username, select the gear icon (⚙️) in the bottom-right corner, and select your desired session before entering your password.
 > 💡 **Testing Status & Recommendations:**  
 > * **Tested & Verified — Full Installation (`./install.sh --all` / `--all --yes`)**: End-to-end single-pass deployment verifying all native security packages (00–70), Pipx tools, Upstream suites, Docker containers, and the Sway tiling desktop environment.
-> * **Tested & Verified — Sway Dynamic Desktop (`./install.sh --sway`)**: Deploys the lightweight Sway tiling compositor, Noctalia desktop shell, Hack Nerd Font, focus-based window opacity, crisp 1080p display rendering, automatic GNOME keyboard layout inheritance, and bidirectional SPICE host/guest clipboard sharing. 100% native Fedora RPMs (zero COPR repositories required).
+> * **Tested & Verified — Sway Dynamic Desktop (`./install.sh --sway`)**: Deploys the lightweight Sway tiling compositor, Noctalia desktop shell, Hack Nerd Font, focus-based window opacity, crisp 1080p display rendering, automatic GNOME keyboard layout inheritance, and bidirectional SPICE host/guest clipboard sharing. The Sway package stack is 100% native Fedora RPMs (zero COPR repositories required); the Hack Nerd Font is fetched from its official GitHub release.
 > * **Tested & Verified — Basic Pentest Setup (`./install.sh --basic`)**: Keeps your default Fedora GNOME desktop intact while deploying all pentest CLI tools, Pipx tools, Docker container suites, Zsh, Neovim, and Alacritty.
 
 | Mode | Flag | Validation Status | Included Components |
 |---|---|---|---|
 | **Full Desktop** | `--all` (`-a`) | **Tested & Verified** | Single-pass combination of everything in Basic **plus** Sway desktop stack (`70-sway.list`, Sway/Noctalia dotfiles, screensharing portal services). |
-| **Sway Desktop** | `--sway` (`-W`) | **Tested & Verified** | Installs `70-sway.list`, sets up screensharing user unit, deploys Sway & Noctalia configuration (Pendora theme), focus opacity daemon, GNOME keyboard auto-sync, Zsh, Neovim, Alacritty, and custom wallpapers. |
+| **Sway Desktop** | `--sway` (`-W`) | **Tested & Verified** | Installs `00-base.list` + `70-sway.list`, sets the hostname to `pendora`, sets up screensharing user unit, deploys Sway & Noctalia configuration (Pendora theme), focus opacity daemon, GNOME keyboard auto-sync, Zsh, Neovim, Alacritty, and custom wallpapers. |
 | **Basic Pentest** | `--basic` (`-b`) | **Tested & Verified** | Retains existing GNOME desktop. Deploys all pentest packages (00–60), Pipx tools, Docker containers, Kali Zsh prompt, Alacritty, Neovim/LazyVim, hostname, and wallpapers. **Zero desktop/window manager changes.** |
 
 <p align="center">
@@ -109,7 +113,7 @@ The scripts and package templates in this project are designed, tested, and vali
    > The script handles `sudo` internally for tasks requiring root (DNF, hostname, Docker service). Running the entire script under `sudo` will incorrectly install user tools (`pipx`, `.zshrc`) into `/root/` instead of your user environment.
 
 3. **Installation Duration, Prompts & Network Downloads**:
-   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 120+ RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
+   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 131 RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
    * **Sudo & Interactive Pauses**: Keep an eye on the terminal. The script periodically requests your `sudo` password for privileged operations and pauses to present generated credential cards (Portainer setup token, SysReptor credentials, BloodHound password) waiting for `[Enter]` to proceed.
    * **OWASP ZAP & Dev Tunnels Downloads**: During the upstream installations, downloading **OWASP ZAP** (Flatpak runtimes: `org.freedesktop.Platform`, GNOME runtime, codecs) and the standalone **Microsoft Dev Tunnels CLI** (`devtunnel`) binary takes time. The terminal may appear frozen or idle for several minutes while downloading these packages. **This is completely normal and has not hung during testing** — do not terminate the process; it will proceed automatically once the downloads finish.
 ---
@@ -150,11 +154,15 @@ pendora/
 
 ## Web Services & Dashboards
 
-| Service | Port / Protocol | Local URL | Status & Description |
+| Service | Port / URL | Credentials | Auto-start after reboot |
 |---|---|---|---|
-| **Portainer CE** | `7999` (HTTPS) | `https://localhost:7999` | ⚠️ *Work in Progress* — Docker management web dashboard (deployment under investigation) |
-| **SysReptor** | `8000` (HTTP) | `http://localhost:8000` | Pentest reporting platform (uses official [SysReptor install script](https://docs.sysreptor.com/install.sh)) |
-| **BloodHound CE** | `8080` (HTTP) | `http://localhost:8080` | Active Directory attack path analysis & visualization |
+| **Portainer CE** | `https://localhost:9443` | User `admin`; Setup Token saved to `/opt/portainer/admin_setup.txt` — complete web setup within **5 minutes** of first launch | ✅ Yes (`restart: always`) |
+| **SysReptor** | `http://localhost:8000` | User `reptor`; password in `/opt/sysreptor/admin_credentials.txt` | ❌ No |
+| **BloodHound CE** | `http://localhost:8080` | User `admin`; password in `/opt/bloodhound/admin_credentials.txt` | ❌ No |
+
+> ℹ️ **SELinux note (Portainer)**: on enforcing hosts the deployed compose uses `security_opt: [label:disable]`; container-selinux otherwise denies Portainer's docker.sock connection (RHBZ #1758227).
+> ▶️ **After a reboot**, start SysReptor with `cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d` and BloodHound with `cd /opt/bloodhound && sudo docker compose up -d` (or via Portainer). BloodHound needs ~8 GB RAM (exit 137 = OOM).
+> 🔑 **SysReptor password reset**: `cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec app python3 manage.py changepassword reptor`
 
 *(For full credentials, startup commands, and terminal workflows across all categories, see the [Tool Reference Guide](assets/TOOL_REFERENCE.md)).*
 > ℹ️ **Third-Party Script Notice**: The SysReptor deployment pulls and executes the vendor's official installer from [`https://docs.sysreptor.com/install.sh`](https://docs.sysreptor.com/install.sh). Users should always review third-party scripts before running them.
@@ -236,10 +244,15 @@ Install only the specific components you need:
 
 # Set system hostname to 'pendora'
 ./install.sh --hostname
+# Run all standalone upstream installers directly (Metasploit, Burp, SecLists, etc.)
+# Note: this also deploys the Docker container stacks (Portainer, SysReptor, BloodHound)
+./install.sh --upstreams
+
+# Install packages from a custom package list file
+./install.sh --file my-packages.list
+
 # Run specific upstream targets directly
-cd upstreams
-./install-upstreams.sh portainer sysreptor bloodhound devtunnel responder hack-font
-```
+./upstreams/install-upstreams.sh portainer sysreptor bloodhound devtunnel responder hack-font
 
 ### 4. Sway Dynamic Desktop (`--sway` / `-W`) — Tested & Verified
 Deploys the complete standalone Sway Wayland tiling compositor, Noctalia shell, dynamic opacity, Hack Nerd Font, and terminal configurations:
@@ -270,9 +283,11 @@ Installs the complete penetration testing toolkit (all native security packages 
 # Interactive run
 ./install.sh --all
 
-# Non-interactive automated run
+# Non-interactive automated run (automatically reboots host in 5s upon completion)
 ./install.sh --all --yes
-```
+
+# Headless automated run without automatic reboot
+./install.sh --all --yes --no-reboot
 
 ## Post-Installation
 
@@ -282,7 +297,7 @@ All shell configurations, font definitions, and group memberships are **automate
 * **Docker Permissions**: Your user is added to the `docker` supplementary group.
 * **Terminal Iconography**: Alacritty is pre-configured with `Hack Nerd Font` to render the Fedora prompt logos and glyphs.
 
-To apply new group memberships and graphical session targets, simply reboot the system:
+To apply new group memberships and graphical session targets, reboot the system (automated when `--yes` is used, unless `--no-reboot` is passed):
 
 ```bash
 sudo reboot
@@ -292,9 +307,10 @@ sudo reboot
 
 ## Known Issues & Work in Progress
 
-* **Portainer Deployment (Under Investigation)**:  
-  The automated Portainer CE container deployment is currently not initializing properly during the upstream installation phase.  
-  > ℹ️ **Isolated Scope**: This issue is confined strictly to Portainer itself and **does not affect any other container stacks** (such as SysReptor or BloodHound CE), which build, initialize, and operate normally.
+* **SysReptor & BloodHound CE do not auto-start after reboot (by design)**:  
+  Both container stacks intentionally have no restart policy — start them after a reboot via Portainer, or manually:  
+  `cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d` · `cd /opt/bloodhound && sudo docker compose up -d`  
+  > ℹ️ **Isolated Scope**: Portainer CE auto-starts on boot (`restart: always`) and manages all three stacks.
 
 * **Sway Virtual Machine Viewer Rescaling (Work in Progress)**:  
   When running the Sway session inside a virtual machine (e.g., `virt-manager` / QEMU with SPICE):

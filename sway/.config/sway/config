@@ -97,7 +97,7 @@ bindsym $mod+f exec $fileManager
 bindsym $mod+Shift+space exec $menu
 bindsym $mod+b exec $browser
 
-bindsym $mod+Shift+r exec pkill -f quickshell; sleep 0.3; qs -c noctalia-shell & disown
+bindsym $mod+Shift+r exec 'pkill -x noctalia; sleep 0.3; setsid noctalia >/dev/null 2>&1 &'
 # bindsym $mod+x exec hyprlock  # no direct equivalent; use swaylock
 bindsym $mod+Shift+s exec grim -g "$(slurp)" ~/Pictures/$(date +%F_%T).png
 

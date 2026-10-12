@@ -16,6 +16,7 @@ xdg-desktop-portal-gtk      # GTK desktop portal fallback
 # --- Desktop Shell & UI Components ---
 noctalia                    # Wayland desktop shell (bar, launcher, control center)
 rofi                        # Window switcher and application runner
+swaybg                      # Wallpaper renderer for sway 'output * bg' (Fedora sway does not require it)
 
 # --- Screen Capture & Utilities ---
 grim                        # Screenshot utility for Wayland / wlroots

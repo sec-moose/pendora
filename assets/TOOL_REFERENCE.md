@@ -18,8 +18,6 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **Arp-scan** | `sudo arp-scan --localnet` | Identify alive hosts on local Ethernet/WiFi |
 | **Dnsenum** | `dnsenum --enum target.com` | Comprehensive DNS enumeration & subdomains |
 | **Hping3** | `sudo hping3 -S -p 80 -c 5 <target>` | Custom TCP/IP packet assembler and tester |
-| **RustScan** | `rustscan -a <target> -- -A -sC` | Ultra-fast port discovery piped directly to Nmap |
-| **Naabu** | `naabu -host <target> -p -` | Fast TCP SYN/CONNECT port scanner (ProjectDiscovery) |
 
 ---
 
@@ -105,15 +103,17 @@ A quick-reference summary for every tool category, standalone suite, and contain
 
 | Service | Port / Protocol | Local Dashboard URL | Default Credentials |
 |---|---|---|---|
-| **Portainer CE** | `7999` (HTTPS) | `https://localhost:7999` | User: `admin`<br>Setup token in `/opt/portainer/admin_setup.txt` |
+| **Portainer CE** | `9443` (HTTPS) | `https://localhost:9443` | User: `admin`<br>Setup token in `/opt/portainer/admin_setup.txt` |
 | **SysReptor** | `8000` (HTTP) | `http://localhost:8000` | User: `reptor`<br>Password in `/opt/sysreptor/admin_credentials.txt` |
 | **BloodHound CE** | `8080` (HTTP) | `http://localhost:8080` | User: `admin`<br>Password in `/opt/bloodhound/admin_credentials.txt` |
 
 * **Manage all containers via Docker**:
   ```bash
-  docker ps                                     # View running containers
-  cd /opt/sysreptor && docker compose logs -f   # SysReptor container logs
-  cd /opt/bloodhound && docker compose logs -f  # BloodHound container logs
+  docker ps                                                          # View running containers
+  cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d    # Start SysReptor after a reboot
+  cd /opt/bloodhound && sudo docker compose up -d                    # Start BloodHound after a reboot
+  cd /opt/sysreptor/sysreptor/deploy && sudo docker compose logs -f  # SysReptor container logs
+  cd /opt/bloodhound && sudo docker compose logs -f                  # BloodHound container logs
   ```
 
 ---

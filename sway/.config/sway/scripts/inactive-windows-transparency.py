@@ -115,7 +115,7 @@ def main():
     args = parser.parse_args()
 
     # Singleton file lock: prevent duplicate processes on Sway reload
-    lock_path = f"/tmp/sway-inactive-transparency-{os.getuid()}.lock"
+    lock_path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}", "sway-inactive-transparency.lock")
     try:
         lock_file = open(lock_path, "w")
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -135,8 +135,15 @@ def main():
     apply_opacities(args.focused, args.opacity)
 
     # Subscribe to Sway window events (focus, new, close, move, etc.)
+    consecutive_failures = 0
     while True:
         try:
+            # Exit cleanly when the Sway session is gone (socket is removed on compositor exit);
+            # sway's exec_always starts a fresh daemon on the next session.
+            sock = os.environ.get("SWAYSOCK", "")
+            if not sock or not os.path.exists(sock):
+                sys.exit(0)
+
             sub_proc = subprocess.Popen(
                 ["swaymsg", "-t", "subscribe", "-m", '["window"]'],
                 stdout=subprocess.PIPE,
@@ -155,10 +162,15 @@ def main():
                     # Window focus, creation, destruction, or layout shift
                     if change in ("focus", "new", "close", "move", "floating"):
                         apply_opacities(args.focused, args.opacity)
+                        consecutive_failures = 0
                 except Exception:
                     pass
 
             sub_proc.wait()
+            consecutive_failures += 1
+            if consecutive_failures >= 3:
+                sys.exit(0)
+            time.sleep(1)
         except Exception:
             time.sleep(1)
 

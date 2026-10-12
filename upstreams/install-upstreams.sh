@@ -50,7 +50,8 @@ ${BOLD}Available Upstream Tools:${NC}
   hack-font       Hack Nerd Font (TTF glyphs from official Nerd Fonts release)
   rustscan        RustScan modern 65k-port scanner (via GitHub release -> /usr/local/bin/rustscan)
   naabu           Naabu fast port scanner (via ProjectDiscovery -> /usr/local/bin/naabu)
-  portainer       Portainer Community Edition (management UI container on port 7999)
+  portainer       Portainer Community Edition (management UI container on port 9443)
+  sysreptor       SysReptor CE pentest reporting platform (via Docker Compose on port 8000)
   bloodhound      BloodHound Community Edition (via Docker Compose on port 8080)
   devtunnel       Microsoft Dev Tunnels CLI (secure tunneling to localhost)
   responder       Responder LLMNR/NBT-NS/mDNS poisoner (via lgandx GitHub + venv)
@@ -65,7 +66,9 @@ EOF
 
 install_metasploit() {
     log_info "Installing Metasploit Framework via Rapid7 omnibus installer..."
-    local cmd="curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb -o /tmp/msfinstall && chmod 755 /tmp/msfinstall && sudo /tmp/msfinstall"
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+    local cmd="curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb -o '$tmp_dir/msfinstall' && chmod 755 '$tmp_dir/msfinstall' && sudo '$tmp_dir/msfinstall'; rc=\$?; rm -rf '$tmp_dir'; exit \$rc"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] $cmd"
     else
@@ -77,8 +80,10 @@ install_metasploit() {
 install_burpsuite() {
     log_info "Downloading Burp Suite Community Edition installer..."
     local installer_url="https://portswigger.net/burp/releases/download?product=community&type=linux"
-    local dest="/tmp/burpsuite_community.sh"
-    local varfile="/tmp/burp_response.varfile"
+    local dest
+    dest="$(mktemp)"
+    local varfile
+    varfile="$(mktemp)"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] curl -fsSL '$installer_url' -o '$dest' && chmod +x '$dest'"
         echo "  [DRY-RUN] sudo '$dest' -q -dir /opt/BurpSuiteCommunity -overwrite -varfile '$varfile'"
@@ -118,7 +123,7 @@ install_seclists() {
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p /usr/share/wordlists"
         echo "  [DRY-RUN] sudo git clone --depth 1 https://github.com/danielmiessler/SecLists.git $target_dir"
-        echo "  [DRY-RUN] sudo gzip -d -k /usr/share/wordlists/seclists/Passwords/Leaked-Databases/rockyou.txt.tar.gz 2>/dev/null || true"
+        echo "  [DRY-RUN] sudo tar -xzf $target_dir/Passwords/Leaked-Databases/rockyou.txt.tar.gz -C $target_dir/Passwords/Leaked-Databases/"
     else
         sudo mkdir -p /usr/share/wordlists
         if [ -d "$target_dir/.git" ]; then
@@ -219,22 +224,118 @@ ensure_docker_ready() {
     sudo usermod -aG docker "$target_user" 2>/dev/null || true
 }
 
+portainer_write_compose_file() {
+    local selinux_block=""
+    if [ "$(getenforce 2>/dev/null)" = "Enforcing" ]; then
+        # On enforcing hosts container-selinux denies container_t -> container_runtime_t:unix_stream_socket
+        # connectto (the docker.sock connect) regardless of any mount relabel; Red Hat's remedy is
+        # --security-opt label=disable (bugzilla #1758227). The container holds the docker socket anyway.
+        selinux_block=$'    security_opt:\n      - label:disable'
+        log_info "SELinux is Enforcing: disabling SELinux labeling for the Portainer container (label:disable) - without it the Docker socket connect is denied by policy."
+    fi
+    sudo mkdir -p /opt/portainer
+    sudo tee /opt/portainer/portainer-compose.yaml >/dev/null <<EOF || { log_error "Could not write /opt/portainer/portainer-compose.yaml."; return 1; }
+services:
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:lts
+    restart: always
+${selinux_block}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    ports:
+      - 127.0.0.1:9443:9443
+      # - 8000:8000  # Remove if you do not intend to use Edge Agents
+
+volumes:
+  portainer_data:
+    name: portainer_data
+
+networks:
+  default:
+    name: portainer_network
+EOF
+}
+
+portainer_test_deployment() {
+    local test_failures=0
+    # The portainer image ships no shell - verify the socket mount from the host via inspect
+    if sudo docker inspect portainer --format '{{range .Mounts}}{{.Destination}} {{end}}' 2>/dev/null | grep -q '/var/run/docker.sock'; then
+        log_success "Docker socket is mounted into the Portainer container."
+    else
+        log_error "Docker socket is NOT mounted into the Portainer container."
+        test_failures=$((test_failures + 1))
+    fi
+    local pt_version
+    pt_version=$(sudo docker exec portainer /portainer --version 2>&1 | head -n 1 || true)
+    if [ -n "$pt_version" ]; then
+        log_info "Portainer version: ${pt_version}"
+    else
+        log_warn "Could not determine the Portainer version."
+        test_failures=$((test_failures + 1))
+    fi
+    local ui_ok=false
+    for _ in {1..15}; do
+        if curl -ksS -o /dev/null https://127.0.0.1:9443 2>/dev/null; then
+            ui_ok=true
+            break
+        fi
+        sleep 2
+    done
+    if [ "$ui_ok" = true ]; then
+        log_success "Portainer UI answers on https://localhost:9443."
+    else
+        log_error "Portainer UI did not answer on https://localhost:9443 within 30s."
+        test_failures=$((test_failures + 1))
+    fi
+    local env_errs
+    env_errs=$(sudo docker logs portainer 2>&1 | grep -icE 'cannot connect|permission denied|operation not permitted' || true)
+    if [ "${env_errs:-0}" -gt 0 ]; then
+        log_warn "Portainer logs contain ${env_errs} connection/permission errors:"
+        sudo docker logs portainer 2>&1 | grep -iE 'cannot connect|permission denied|operation not permitted' | tail -n 3 || true
+        if [ "$(getenforce 2>/dev/null)" = "Enforcing" ]; then
+            log_warn "SELinux is Enforcing - inspect denials with: sudo ausearch -m avc -ts recent | grep -i docker"
+        fi
+        test_failures=$((test_failures + 1))
+    else
+        log_success "No connection/permission errors in the Portainer logs (CE creates the 'local' environment when the wizard page loads - it reports 'We have connected your local environment' on success)."
+    fi
+    return "$test_failures"
+}
+
 install_portainer() {
     log_info "Configuring Docker service and deploying Portainer CE..."
     local creds_file="/opt/portainer/admin_setup.txt"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p /opt/portainer"
-        echo "  [DRY-RUN] sudo docker volume create portainer_data"
-        echo "  [DRY-RUN] sudo docker run -d -p 7999:9443 --name portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest"
+        echo "  [DRY-RUN] Write portainer-compose.yaml (lts image, 9443:9443; security_opt label:disable when SELinux is Enforcing)"
+        echo "  [DRY-RUN] cd /opt/portainer && sudo docker compose -f portainer-compose.yaml up -d"
+        echo "  [DRY-RUN] Test: socket mounted, UI on https://localhost:9443, version printed, env-connection errors checked"
         echo "  [DRY-RUN] Extract setup_token from container logs"
         echo "  [DRY-RUN] Display setup token banner and prompt user to copy before continuing"
-        echo "  [DRY-RUN] Web interface: https://localhost:7999"
+        echo "  [DRY-RUN] Web interface: https://localhost:9443"
     else
         ensure_docker_ready || return 1
 
-        # If Portainer container is already running, show setup banner and skip re-deployment
-        if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^portainer"; then
-            log_success "Portainer CE container is already running! Web interface: https://localhost:7999"
+        # If Portainer container already exists, start it if stopped, show setup banner and skip re-deployment
+        if sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^portainer$"; then
+            if ! sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^portainer$"; then
+                log_info "Portainer container exists but is stopped. Starting it..."
+                sudo docker start portainer || log_warn "Could not start existing Portainer container; continuing."
+            fi
+            log_success "Portainer CE container is already running! Web interface: https://localhost:9443"
+            # Rewrite the compose file (picks up label:disable under SELinux etc.) and refresh to the current lts digest.
+            # A foreign (non-compose) container makes 'up -d' fail on the name; the running one is kept then.
+            portainer_write_compose_file || true
+            if sudo docker compose -f /opt/portainer/portainer-compose.yaml pull 2>/dev/null; then
+                if sudo docker compose -f /opt/portainer/portainer-compose.yaml up -d 2>/dev/null; then
+                    log_info "Portainer container refreshed to the current configuration."
+                else
+                    log_warn "Could not refresh the Portainer container (foreign or stale). To recreate it: sudo docker rm -f portainer && sudo docker compose -f /opt/portainer/portainer-compose.yaml up -d"
+                fi
+            fi
+            portainer_test_deployment || log_warn "Portainer deployment tests reported problems above."
             local existing_token=""
             if [ -f "$creds_file" ]; then
                 existing_token=$(grep -E "^Setup Token:" "$creds_file" 2>/dev/null | cut -d: -f2- | tr -d ' \r\n' || true)
@@ -248,27 +349,39 @@ install_portainer() {
             echo -e "${GREEN}${BOLD}====================================================${NC}"
             echo -e "${GREEN}${BOLD}Portainer CE Web Dashboard${NC}"
             echo -e "${GREEN}${BOLD}====================================================${NC}"
-            echo -e "  Web URL:      ${BOLD}https://localhost:7999${NC}"
+            echo -e "  Web URL:      ${BOLD}https://localhost:9443${NC}"
             echo -e "  Username:     ${BOLD}admin${NC}"
             echo -e "  Setup Token:  ${BOLD}${existing_token}${NC}"
-            echo -e "${YELLOW}  ⚠️  REMINDER: Access https://localhost:7999 to complete admin setup!${NC}"
+            echo -e "${YELLOW}  ⚠️  REMINDER: Access https://localhost:9443 to complete admin setup!${NC}"
             echo -e "${GREEN}${BOLD}====================================================${NC}"
             echo
-            read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _
+            if [ "$ASSUME_YES" = false ]; then
+                read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _ || true
+            fi
             return 0
         fi
 
-        sudo mkdir -p /opt/portainer
-        log_info "Creating portainer_data volume..."
-        sudo docker volume create portainer_data 2>/dev/null || true
-        log_info "Deploying Portainer CE container..."
-        sudo docker run -d \
-            -p 7999:9443 \
-            --name portainer \
-            --restart=always \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v portainer_data:/data \
-            portainer/portainer-ce:latest
+        log_info "Writing portainer-compose.yaml to /opt/portainer..."
+        portainer_write_compose_file || { log_error "Could not write /opt/portainer/portainer-compose.yaml."; return 0; }
+        log_info "Deploying Portainer CE via docker compose..."
+        local compose_rc=1
+        local attempt
+        for attempt in 1 2 3; do
+            if (cd /opt/portainer && sudo docker compose -f portainer-compose.yaml up -d); then
+                compose_rc=0
+                break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+                log_warn "Portainer deployment failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
+                sleep 5
+            fi
+        done
+        if [ "$compose_rc" -ne 0 ]; then
+            log_error "Portainer deployment failed after 3 attempts (Docker Hub network error). Check connectivity and re-run 'pendora containers', or deploy manually: cd /opt/portainer && sudo docker compose -f portainer-compose.yaml up -d"
+            return 0
+        fi
+
+        portainer_test_deployment || log_warn "Portainer deployment tests reported problems above."
 
         log_info "Waiting for Portainer CE container to initialize and generate setup token..."
         local setup_token=""
@@ -279,98 +392,129 @@ install_portainer() {
         done
         [ -z "$setup_token" ] && setup_token="Check 'sudo docker logs portainer' for setup_token"
 
-        sudo tee "$creds_file" >/dev/null <<EOF
-Web URL:      https://localhost:7999
+        sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the Setup Token above is still valid."
+Web URL:      https://localhost:9443
 Username:     admin
 Setup Token:  ${setup_token}
 Note:         Initial setup must be completed within 5 minutes of first launch.
 EOF
+        sudo chmod 600 "$creds_file" || log_warn "Could not restrict permissions on $creds_file (sudo may require re-authentication); run 'sudo chmod 600 $creds_file' manually."
 
         echo
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo -e "${GREEN}${BOLD}Portainer CE Initial Setup${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
-        echo -e "  Web URL:      ${BOLD}https://localhost:7999${NC}"
+        echo -e "  Web URL:      ${BOLD}https://localhost:9443${NC}"
         echo -e "  Username:     ${BOLD}admin${NC}"
         echo -e "  Setup Token:  ${BOLD}${setup_token}${NC}"
         echo -e "  Saved to:     ${creds_file}"
-        echo -e "${YELLOW}  ⚠️  REMINDER: Copy the Setup Token above to unlock initial admin setup at https://localhost:7999!${NC}"
+        echo -e "${YELLOW}  ⚠️  REMINDER: Complete the initial admin setup in the web UI within 5 minutes - the Setup Token above expires after that!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo
-        read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _
-        log_success "Portainer CE deployed successfully! Web interface: https://localhost:7999"
+        if [ "$ASSUME_YES" = false ]; then
+            read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _ || true
+        fi
+        log_success "Portainer CE deployed successfully! Web interface: https://localhost:9443"
     fi
 }
 install_sysreptor() {
     log_info "Configuring Docker and deploying SysReptor pentest reporting platform..."
     local install_dir="/opt/sysreptor"
-    local installer_script="/tmp/sysreptor_install.sh"
+    local installer_script
+    installer_script="$(mktemp)"
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] sudo mkdir -p '$install_dir'"
-        echo "  [DRY-RUN] sed -i 's/read -p \"Copy your password.*/CONFIRM=\"y\"/g' '$installer_script'"
-        echo "  [DRY-RUN] sed -i 's/read -p .*/true/g' '$installer_script'"
-        echo "  [DRY-RUN] cd '$install_dir' && sudo env SYSREPTOR_ENCRYPT='n' CONFIRM='y' CONFIRM_AUTOUPDATE='n' bash '$installer_script'"
+        echo "  [DRY-RUN] Existing stack: start via compose (/opt/sysreptor/sysreptor/deploy); fresh: download + run official installer unattended"
+        echo "  [DRY-RUN] Strip restart policies (no auto-start after reboot) and set containers to restart=no"
+        echo "  [DRY-RUN] Reset the reptor password to a fresh generated value (docker compose exec app manage.py shell)"
         echo "  [DRY-RUN] Display credentials banner and prompt user to copy before continuing"
         echo "  [DRY-RUN] SysReptor interface will be accessible at: http://localhost:8000"
     else
         ensure_docker_ready || return 1
         local creds_file="${install_dir}/admin_credentials.txt"
 
-        # If SysReptor container stack is already running, show credentials if available and skip re-installation
-        if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^sysreptor-app"; then
-            log_success "SysReptor container stack is already running! Web interface: http://localhost:8000"
-            if [ -f "$creds_file" ]; then
-                local existing_pw
-                existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n')
-                if [ -n "$existing_pw" ]; then
-                    echo
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo -e "${GREEN}${BOLD}SysReptor Credentials${NC}"
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo -e "  Web URL:   ${BOLD}http://localhost:8000${NC}"
-                    echo -e "  Username:  ${BOLD}reptor${NC}"
-                    echo -e "  Password:  ${BOLD}${existing_pw}${NC}"
-                    echo -e "  Saved to:  ${creds_file}"
-                    echo -e "${YELLOW}  ⚠️  REMINDER: Please change this password on first login!${NC}"
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo
-                    read -rp "Please copy your username and password above. Press [Enter] to continue: " _
+        # Detect a previous SysReptor deployment by its compose file or containers (the compose
+        # project is named after the deploy directory, so container names are not stable).
+        local deploy_compose="/opt/sysreptor/sysreptor/deploy/docker-compose.yml"
+        local preexisting=false
+        if [ -f "$deploy_compose" ] || sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qi "sysreptor"; then
+            preexisting=true
+        fi
+        if [ "$preexisting" = true ]; then
+            if (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose ps -q app 2>/dev/null | grep -q .); then
+                log_success "SysReptor container stack is already running! Web interface: http://localhost:8000"
+            else
+                log_info "SysReptor stack exists but is stopped - starting it..."
+                if (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d) 2>/dev/null; then
+                    log_success "SysReptor container stack started! Web interface: http://localhost:8000"
+                else
+                    log_warn "Could not start the SysReptor stack; start it via Portainer or: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d"
                 fi
             fi
-            return 0
+        else
+            sudo mkdir -p "$install_dir"
+            log_info "Downloading official SysReptor installer..."
+            curl -fsSL https://docs.sysreptor.com/install.sh -o "$installer_script"
+            chmod +x "$installer_script"
+
+            # Neutralize all interactive read prompts with automated responses to avoid infinite while-loops
+            sed -i 's/read -p "Copy your password.*/CONFIRM="y"/g' "$installer_script"
+            sed -i 's/read -p "Backup your encryption.*/CONFIRM="y"/g' "$installer_script"
+            sed -i 's/read -p "Enable automatic updates.*/CONFIRM_AUTOUPDATE="n"/g' "$installer_script"
+            sed -i 's/read -p "Encrypt files and database.*/SYSREPTOR_ENCRYPT="n"/g' "$installer_script"
+            sed -i 's/read -p .*/true/g' "$installer_script"
+
+            log_info "Running SysReptor installer in unattended mode (Community Edition)..."
+
+            local installer_rc=0
+            (
+                cd "$install_dir"
+                sudo env \
+                    SYSREPTOR_LICENSE="" \
+                    SYSREPTOR_ENCRYPT="n" \
+                    CONFIRM="y" \
+                    CONFIRM_AUTOUPDATE="n" \
+                    bash "$installer_script"
+            ) 2>&1 | sudo tee "${install_dir}/admin_install.log" || installer_rc=$?
+            sudo chmod 600 "${install_dir}/admin_install.log" 2>/dev/null || true
+
+            # Cleanup temporary installer script
+            rm -f "$installer_script"
+
+            if [ "$installer_rc" -ne 0 ]; then
+                log_error "SysReptor installer exited with status ${installer_rc} (see ${install_dir}/admin_install.log). If this is 'Old SysReptor volumes exist', the previous data is preserved - removing the old volumes deletes that data; resolve and re-run."
+                return 0
+            fi
         fi
 
-        sudo mkdir -p "$install_dir"
-        log_info "Downloading official SysReptor installer..."
-        curl -fsSL https://docs.sysreptor.com/install.sh -o "$installer_script"
-        chmod +x "$installer_script"
+        # SysReptor must not auto-start after reboot: strip restart policies from the compose
+        # files and set the containers to restart=no (the stack is started on demand instead)
+        sudo sed -i '/^[[:space:]]*restart:[[:space:]]/d' \
+            /opt/sysreptor/sysreptor/deploy/docker-compose.yml \
+            /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml \
+            /opt/sysreptor/sysreptor/deploy/languagetool/docker-compose.yml 2>/dev/null || true
+        sudo docker update --restart=no $(cd /opt/sysreptor/sysreptor/deploy 2>/dev/null && sudo docker compose ps -q 2>/dev/null) 2>/dev/null || true
 
-        # Neutralize all interactive read prompts with automated responses to avoid infinite while-loops
-        sed -i 's/read -p "Copy your password.*/CONFIRM="y"/g' "$installer_script"
-        sed -i 's/read -p "Backup your encryption.*/CONFIRM="y"/g' "$installer_script"
-        sed -i 's/read -p "Enable automatic updates.*/CONFIRM_AUTOUPDATE="n"/g' "$installer_script"
-        sed -i 's/read -p "Encrypt files and database.*/SYSREPTOR_ENCRYPT="n"/g' "$installer_script"
-        sed -i 's/read -p .*/true/g' "$installer_script"
+        # Reset the reptor password to a fresh generated value so the banner always shows working
+        # cleartext credentials (the installer prints its generated password only once, and older
+        # credentials files may no longer contain a valid password)
+        local new_pw
+        new_pw="$(openssl rand -base64 20 | tr -d '\r\n=')"
+        local reset_ok=false
+        local attempt
+        for attempt in 1 2 3 4 5; do
+            if (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec -T app python3 manage.py shell -c "from django.contrib.auth import get_user_model; from django.contrib.auth.hashers import make_password; u = get_user_model().objects.filter(username='reptor').first(); u.password = make_password('${new_pw}'); u.save(); print('PASSWORD-RESET-OK')") 2>/dev/null | grep -q "PASSWORD-RESET-OK"; then
+                reset_ok=true
+                break
+            fi
+            sleep 3
+        done
+        if [ "$reset_ok" = true ]; then
+            printf 'Web URL:   http://localhost:8000\nUsername:  reptor\nPassword:  %s\n' "${new_pw}" | sudo tee "$creds_file" >/dev/null || log_warn "Could not write $creds_file."
+            sudo chmod 600 "$creds_file" 2>/dev/null || true
+        else
+            new_pw="(could not reset automatically - see ${install_dir}/admin_install.log for the installer's original password, or reset with: cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec app python3 manage.py changepassword reptor)"
+        fi
 
-        log_info "Running SysReptor installer in unattended mode (Community Edition)..."
-
-        (
-            cd "$install_dir"
-            sudo env \
-                SYSREPTOR_LICENSE="" \
-                SYSREPTOR_ENCRYPT="n" \
-                CONFIRM="y" \
-                CONFIRM_AUTOUPDATE="n" \
-                bash "$installer_script"
-        ) 2>&1 | sudo tee "$creds_file"
-
-        # Cleanup temporary installer script
-        rm -f "$installer_script"
-
-        # Extract generated superuser credentials
-        local generated_pw
-        generated_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n')
-        [ -z "$generated_pw" ] && generated_pw="Check $creds_file"
 
         echo
         echo -e "${GREEN}${BOLD}====================================================${NC}"
@@ -378,12 +522,14 @@ install_sysreptor() {
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo -e "  Web URL:   ${BOLD}http://localhost:8000${NC}"
         echo -e "  Username:  ${BOLD}reptor${NC}"
-        echo -e "  Password:  ${BOLD}${generated_pw}${NC}"
+        echo -e "  Password:  ${BOLD}${new_pw}${NC}"
         echo -e "  Saved to:  ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: Please change this password on first login!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo
-        read -rp "Please copy your username and password above. Press [Enter] to continue: " _
+        if [ "$ASSUME_YES" = false ]; then
+            read -rp "Please copy your username and password above. Press [Enter] to continue: " _ || true
+        fi
         log_success "SysReptor deployment completed! Web interface: http://localhost:8000"
     fi
 }
@@ -393,85 +539,138 @@ install_bloodhound() {
     local creds_file="${install_dir}/admin_credentials.txt"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p '$install_dir'"
-        echo "  [DRY-RUN] sudo curl -sSL https://ghst.ly/getbhce -o '$install_dir/docker-compose.yml'"
-        echo "  [DRY-RUN] sudo sed -i '/image:/a \\    restart: always' '$install_dir/docker-compose.yml'"
+        echo "  [DRY-RUN] Download docker-compose.yml from SpecterOps/BloodHound examples to '$install_dir'"
+        echo "  [DRY-RUN] Write bloodhound.config.json with a generated initial admin password and enable its compose mount"
         echo "  [DRY-RUN] cd '$install_dir' && sudo docker compose up -d"
-        echo "  [DRY-RUN] Display credentials banner and prompt user to copy before continuing"
+        echo "  [DRY-RUN] Wait for http://localhost:8080 to answer, then display the credentials banner"
         echo "  [DRY-RUN] BloodHound CE interface will be accessible at: http://localhost:8080"
-        echo "  [DRY-RUN] Stack and volumes fully manageable in Portainer at: https://localhost:7999"
+        echo "  [DRY-RUN] Stack and volumes fully manageable in Portainer at: https://localhost:9443"
     else
         ensure_docker_ready || return 1
 
-        # If BloodHound container stack is already running, show credentials if available and skip re-installation
-        if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^bloodhound"; then
-            log_success "BloodHound CE container stack is already running! Web interface: http://localhost:8080"
-            # Ensure running containers have restart: always enabled for boot persistence
-            sudo docker update --restart=always $(sudo docker ps -q --filter "name=bloodhound") 2>/dev/null || true
-            sudo docker update --restart=always $(sudo docker ps -q --filter "name=app-db") 2>/dev/null || true
-            sudo docker update --restart=always $(sudo docker ps -q --filter "name=graph-db") 2>/dev/null || true
-            if [ -f "$creds_file" ]; then
-                local existing_pw
-                existing_pw=$(grep -E "^Password:" "$creds_file" 2>/dev/null | head -n 1 | awk '{print $2}' | tr -d '\r\n')
-                if [ -n "$existing_pw" ]; then
-                    echo
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo -e "${GREEN}${BOLD}BloodHound CE Credentials${NC}"
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC}"
-                    echo -e "  Username:  ${BOLD}admin${NC}"
-                    echo -e "  Password:  ${BOLD}${existing_pw}${NC}"
-                    echo -e "  Saved to:  ${creds_file}"
-                    echo -e "${YELLOW}  ⚠️  REMINDER: You must change this password on first login!${NC}"
-                    echo -e "${GREEN}${BOLD}====================================================${NC}"
-                    echo
-                    read -rp "Please copy your username and password above. Press [Enter] to continue: " _
-                fi
-            fi
+        # Single converging path: every run deploys/refreshes the stack and resets the admin
+        # password to a fresh generated value, so the banner credentials always work - even when
+        # data volumes predate this deployment (bhe_recreate_default_admin=true makes the app
+        # re-create the default admin with the config password on startup).
+
+        sudo mkdir -p "$install_dir"
+        if [ ! -f "$install_dir/docker-compose.yml" ]; then
+            log_info "Downloading official BloodHound CE docker-compose.yml to $install_dir..."
+            sudo curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "$install_dir/docker-compose.yml" \
+                https://raw.githubusercontent.com/SpecterOps/BloodHound/main/examples/docker-compose/docker-compose.yml \
+                || { log_error "Could not download the BloodHound CE compose file; skipping BloodHound CE deployment."; return 0; }
+        fi
+
+        # Fresh admin password on EVERY run; bhe_recreate_default_admin=true makes the container
+        # re-create the default admin with that password on startup. Each run invalidates the
+        # previous generated password (change it in the UI if you want it to stick across runs).
+        local initial_pw
+        initial_pw="$(openssl rand -base64 20 | tr -d '\r\n=')"
+        log_info "Writing bloodhound.config.json + .env (admin password is reset to a fresh value on every run)..."
+        sudo tee "$install_dir/bloodhound.config.json" >/dev/null <<EOF || { log_error "Could not write $install_dir/bloodhound.config.json."; return 0; }
+{
+  "version": 1,
+  "bind_addr": "0.0.0.0:8080",
+  "metrics_port": ":2112",
+  "root_url": "http://127.0.0.1:8080/",
+  "work_dir": "/opt/bloodhound/work",
+  "log_level": "INFO",
+  "graph_driver": "neo4j",
+  "tls": {
+    "cert_file": "",
+    "key_file": ""
+  },
+  "collectors_base_path": "/etc/bloodhound/collectors",
+  "default_password": "$initial_pw",
+  "default_admin": {
+    "enabled": true,
+    "principal_name": "admin",
+    "password": "$initial_pw",
+    "first_name": "BloodHound",
+    "last_name": "Admin",
+    "email_address": "admin@example.com"
+  }
+}
+EOF
+        printf 'bhe_recreate_default_admin=true\n' | sudo tee "$install_dir/.env" >/dev/null || { log_error "Could not write $install_dir/.env."; return 0; }
+        sudo chmod 600 "$install_dir/bloodhound.config.json" "$install_dir/.env" 2>/dev/null || true
+        sudo chmod 755 "$install_dir" 2>/dev/null || true
+
+        # Restrict port binding to localhost loopback in docker-compose.yml
+        sudo sed -i 's|[[:space:]]*- 8080:8080|      - 127.0.0.1:8080:8080|g; s|[[:space:]]*- "8080:8080"|      - "127.0.0.1:8080:8080"|g' "$install_dir/docker-compose.yml" 2>/dev/null || true
+
+        # Enable the commented-out config mount in the compose file (idempotent)
+        sudo sed -i 's|^    # volumes:$|    volumes:|; s|^    #   - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$|      - ./bloodhound.config.json:/bloodhound.config.json:ro|' "$install_dir/docker-compose.yml"
+        if ! sudo grep -q '^      - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$' "$install_dir/docker-compose.yml"; then
+            log_error "Could not enable the bloodhound.config.json mount in docker-compose.yml; skipping BloodHound CE deployment."
             return 0
         fi
 
-        sudo mkdir -p "$install_dir"
-        log_info "Downloading official BloodHound CE docker-compose.yml to $install_dir..."
-        sudo curl -sSL https://ghst.ly/getbhce -o "$install_dir/docker-compose.yml"
-        # Ensure all BloodHound CE services auto-start on system boot
-        sudo sed -i '/image:/a \    restart: always' "$install_dir/docker-compose.yml"
-        log_info "Starting BloodHound CE stack via docker compose..."
-        (cd "$install_dir" && sudo docker compose up -d)
-        log_info "Waiting for BloodHound CE container to initialize..."
-        local raw_pw_line=""
-        local parsed_pw=""
-        for _ in {1..15}; do
-            raw_pw_line=$(cd "$install_dir" && sudo docker compose logs bloodhound 2>/dev/null | grep -i "initial password" | tail -n 1 || true)
-            if [ -n "$raw_pw_line" ]; then
-                parsed_pw=$(echo "$raw_pw_line" | sed -E 's/.*(Initial Password Set To:|initial password is:?)[[:space:]]*//I' | tr -d '\r\n')
-                [ -n "$parsed_pw" ] && break
+        log_info "Starting BloodHound CE stack via docker compose (image pulls may take a few minutes)..."
+        local compose_rc=1
+        local attempt
+        for attempt in 1 2 3; do
+            if (cd "$install_dir" && sudo docker compose up -d --force-recreate); then
+                compose_rc=0
+                break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+                log_warn "docker compose up failed (attempt ${attempt}/3, often a transient Docker Hub network error); retrying in 5s..."
+                sleep 5
+            fi
+        done
+        if [ "$compose_rc" -ne 0 ]; then
+            log_error "BloodHound CE deployment failed after 3 attempts (image pull network error). Check connectivity and re-run 'pendora containers', or deploy manually: cd $install_dir && sudo docker compose up -d --force-recreate"
+            return 0
+        fi
+
+        # Wait for the UI to answer (initial graph analysis can take ~1 minute; exit 137 = out of memory)
+        log_info "Waiting for the BloodHound UI to answer on http://localhost:8080..."
+        local ui_up=false
+        for _ in {1..45}; do
+            if curl -fsS -o /dev/null http://127.0.0.1:8080 2>/dev/null; then
+                ui_up=true
+                break
             fi
             sleep 2
         done
-        [ -z "$parsed_pw" ] && parsed_pw="Run 'cd $install_dir && sudo docker compose logs bloodhound' to view"
+        if [ "$ui_up" = true ]; then
+            log_success "BloodHound UI is answering on http://localhost:8080."
+        else
+            log_warn "BloodHound UI did not answer within 90 seconds."
+        fi
+        log_info "BloodHound CE container status:"
+        sudo docker ps -a --filter "name=bloodhound" --format '  {{.Names}}: {{.Status}}' 2>/dev/null || true
+        log_info "If the UI is unreachable, inspect: cd $install_dir && sudo docker compose logs bloodhound --tail 50 (exit 137 = out of memory; 8GB RAM required)"
+
+        local parsed_user="admin"
+        local parsed_pw="$initial_pw"
 
         # Save credentials to /opt/bloodhound/admin_credentials.txt
-        sudo tee "$creds_file" >/dev/null <<EOF
+        sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the credentials above are still valid."
 Web URL:   http://localhost:8080
-Username:  admin
+Username:  ${parsed_user}
 Password:  ${parsed_pw}
 EOF
+        sudo chmod 600 "$creds_file" || log_warn "Could not restrict permissions on $creds_file (sudo may require re-authentication); run 'sudo chmod 600 $creds_file' manually."
 
         echo
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo -e "${GREEN}${BOLD}BloodHound CE Credentials${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo -e "  Web URL:   ${BOLD}http://localhost:8080${NC}"
-        echo -e "  Username:  ${BOLD}admin${NC}"
+        echo -e "  Username:  ${BOLD}${parsed_user}${NC}"
         echo -e "  Password:  ${BOLD}${parsed_pw}${NC}"
         echo -e "  Saved to:  ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: You must change this password on first login!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
         echo
-        read -rp "Please copy your username and password above. Press [Enter] to continue: " _
+        if [ "$ASSUME_YES" = false ]; then
+            read -rp "Please copy your username and password above. Press [Enter] to continue: " _ || true
+        fi
 
         log_success "BloodHound CE deployed successfully! Web interface: http://localhost:8080"
-        log_info "BloodHound stack and volumes are fully manageable in Portainer (https://localhost:7999)."
+        log_info "BloodHound stack and volumes are fully manageable in Portainer (https://localhost:9443)."
     fi
 }
 install_devtunnel() {
@@ -479,11 +678,14 @@ install_devtunnel() {
     local dest="/usr/local/bin/devtunnel"
     local download_url="https://aka.ms/TunnelsCliDownload/linux-x64"
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] sudo curl -fL --progress-bar '$download_url' -o '$dest' && sudo chmod +x '$dest'"
+        echo "  [DRY-RUN] curl -fL --progress-bar '$download_url' -o <mktemp dir>/devtunnel && sudo install -m 755 <tmp>/devtunnel '$dest'"
     else
         log_info "Downloading devtunnel binary (~60 MB)..."
-        sudo curl -fL --progress-bar "$download_url" -o "$dest"
-        sudo chmod +x "$dest"
+        local tmp_dir
+        tmp_dir="$(mktemp -d)"
+        curl -fsSL --progress-bar "$download_url" -o "$tmp_dir/devtunnel"
+        sudo install -m 755 "$tmp_dir/devtunnel" "$dest"
+        rm -rf "$tmp_dir"
         log_success "Microsoft Dev Tunnels installed to $dest"
     fi
 }
@@ -526,19 +728,20 @@ install_rustscan() {
     log_info "Installing RustScan modern fast port scanner..."
     local dest="/usr/local/bin/rustscan"
     local download_url="https://github.com/bee-san/RustScan/releases/download/2.4.1/x86_64-linux-rustscan.tar.gz.zip"
-    local temp_dir="/tmp/rustscan_install_$$"
+    local temp_dir
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] curl -fsSL '$download_url' -o /tmp/rustscan.zip"
-        echo "  [DRY-RUN] unzip /tmp/rustscan.zip && tar -xzf x86_64-linux-rustscan.tar.gz"
+        echo "  [DRY-RUN] stage in a private mktemp -d directory: curl -fsSL '$download_url' -o rustscan.zip; unzip; tar -xzf"
         echo "  [DRY-RUN] sudo install -m 755 rustscan '$dest'"
     else
-        mkdir -p "$temp_dir"
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
         log_info "Downloading RustScan release archive..."
         curl -fsSL "$download_url" -o "$temp_dir/rustscan.zip"
         unzip -q -o "$temp_dir/rustscan.zip" -d "$temp_dir"
         tar -xzf "$temp_dir/x86_64-linux-rustscan.tar.gz" -C "$temp_dir"
         sudo install -m 755 "$temp_dir/rustscan" "$dest"
         rm -rf "$temp_dir"
+        trap - EXIT
         log_success "RustScan installed successfully to $dest"
     fi
 }
@@ -547,18 +750,19 @@ install_naabu() {
     log_info "Installing Naabu fast port scanner (ProjectDiscovery)..."
     local dest="/usr/local/bin/naabu"
     local download_url="https://github.com/projectdiscovery/naabu/releases/download/v2.6.1/naabu_2.6.1_linux_amd64.zip"
-    local temp_dir="/tmp/naabu_install_$$"
+    local temp_dir
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] curl -fsSL '$download_url' -o /tmp/naabu.zip"
-        echo "  [DRY-RUN] unzip /tmp/naabu.zip naabu"
+        echo "  [DRY-RUN] stage in a private mktemp -d directory: curl -fsSL '$download_url' -o naabu.zip; unzip naabu"
         echo "  [DRY-RUN] sudo install -m 755 naabu '$dest'"
     else
-        mkdir -p "$temp_dir"
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
         log_info "Downloading Naabu release archive..."
         curl -fsSL "$download_url" -o "$temp_dir/naabu.zip"
         unzip -q -o "$temp_dir/naabu.zip" naabu -d "$temp_dir"
         sudo install -m 755 "$temp_dir/naabu" "$dest"
         rm -rf "$temp_dir"
+        trap - EXIT
         log_success "Naabu installed successfully to $dest"
     fi
 }
@@ -612,52 +816,59 @@ if [ "$ASSUME_YES" = false ] && [ "$DRY_RUN" = false ]; then
     [[ "$confirm" =~ ^[Yy]$ ]] || { log_warn "Aborted by user."; exit 0; }
 fi
 
+declare -a FAILED_TOOLS=()
+
 for tool in "${TOOLS[@]}"; do
     case "$tool" in
         metasploit)
-            install_metasploit
+            install_metasploit || FAILED_TOOLS+=("metasploit")
             ;;
         burpsuite)
-            install_burpsuite
+            install_burpsuite || FAILED_TOOLS+=("burpsuite")
             ;;
         seclists)
-            install_seclists
+            install_seclists || FAILED_TOOLS+=("seclists")
             ;;
         evil-winrm)
-            install_evil_winrm
+            install_evil_winrm || FAILED_TOOLS+=("evil-winrm")
             ;;
         zap)
-            install_zap
+            install_zap || FAILED_TOOLS+=("zap")
             ;;
         hack-font|font)
-            install_hack_font
+            install_hack_font || FAILED_TOOLS+=("hack-font")
             ;;
         rustscan)
-            install_rustscan
+            install_rustscan || FAILED_TOOLS+=("rustscan")
             ;;
         naabu)
-            install_naabu
+            install_naabu || FAILED_TOOLS+=("naabu")
             ;;
         portainer)
-            install_portainer
+            install_portainer || FAILED_TOOLS+=("portainer")
             ;;
         sysreptor)
-            install_sysreptor
+            install_sysreptor || FAILED_TOOLS+=("sysreptor")
             ;;
         bloodhound)
-            install_bloodhound
+            install_bloodhound || FAILED_TOOLS+=("bloodhound")
             ;;
         devtunnel|devtunnels)
-            install_devtunnel
+            install_devtunnel || FAILED_TOOLS+=("devtunnel")
             ;;
         responder)
-            install_responder
+            install_responder || FAILED_TOOLS+=("responder")
             ;;
         *)
             log_error "Unknown tool: $tool"
-            exit 1
+            FAILED_TOOLS+=("$tool")
             ;;
     esac
 done
 
-log_success "All requested upstream tools processed."
+if [ ${#FAILED_TOOLS[@]} -gt 0 ]; then
+    log_error "The following upstream tool(s) encountered errors: ${FAILED_TOOLS[*]}"
+    exit 1
+fi
+
+log_success "All requested upstream tools processed successfully."
