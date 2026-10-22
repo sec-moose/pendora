@@ -41,13 +41,13 @@ Pendora organizes tooling, services, and configuration into four dedicated tiers
 │ 1. Native DNF RPM │ 2. Pipx Isolated  │ 3. Containers  │ 4. Shell &    │
 │    (pkg-lists/)   │    (pipx-lists/)  │    & Upstreams │    Look-&-Feel│
 │                   │                   │   (upstreams/) │    (zsh/)     │
-│ 140 Fedora pkgs   │ 11 Python tools   │ Portainer:9443 │ Zsh setup     │
+│ 141 Fedora pkgs   │ 11 Python tools   │ Portainer:9443 │ Zsh setup     │
 │ Scanners, debug,  │ netexec, impacket │ SysReptor:8000 │ Completions   │
 │ compilers, sniff  │ mitmproxy, sqlmap │ BloodHound:8080│ Aliases, hl   │
 └───────────────────┴───────────────────┴────────────────┴───────────────┘
 ```
 
-1. **Native Fedora RPMs (`pkg-lists/`)**: 140 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, forensics, and the Sway desktop runtime.
+1. **Native Fedora RPMs (`pkg-lists/`)**: 141 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, forensics, and the Sway desktop runtime.
 2. **Pipx Isolated Python Tools (`pipx-lists/`)**: Offensive Python utilities requiring isolated environments to prevent library conflicts with system Python (`netexec`, `impacket`, `certipy-ad`, `bloodhound-ce`, `updog`, `sqlmap`, etc.).
 3. **Standalone Upstreams & Containers (`upstreams/`)**: Vendor installers, git clones, and Docker containers for enterprise suites (`metasploit`, `burpsuite`, `seclists`, `evil-winrm`, `zap`, `hack-font`, `rustscan`, `naabu`, `portainer`, `sysreptor`, `bloodhound`, `devtunnel`, `responder`).
 4. **Interactive Shell Environment (`zsh/`)**: Interactive Zsh configuration with autosuggestions, syntax highlighting, and pentesting aliases.
@@ -81,6 +81,47 @@ Pendora provides full flexibility over your graphical environment. You can choos
   <b>Fedora GNOME Penetration Testing Desktop Environment (Basic Install)</b><br/>
   <img src="assets/Pendora-Gnome.png" width="100%" alt="Pendora GNOME Penetration Testing Desktop Environment" />
 </p>
+
+---
+
+## Fedora Server vs GNOME Desktop — Which Path?
+
+Pendora has **two distinct install paths** — pick the one matching your host:
+
+| Your Host | Path | What Happens |
+|---|---|---|
+| **Fedora Workstation / GNOME desktop** | One pass: `--basic`, `--sway`, or `--all` | The desktop and login manager already exist; Pendora layers the pentest tooling on top (and optionally swaps in Sway). |
+| **Fedora Server minimal** | **Two passes: `--server` → reboot → `--all`** | The server ships **no desktop, no display manager, and a bare `/home/USER`** (no Downloads/Documents/Pictures). Phase 1 provisions the full Sway desktop stack, the greetd login manager, XDG user folders and server hardening; phase 2 adds the pentest toolkit. |
+
+### Server Prerequisites (before cloning)
+
+Fedora Server minimal ships **without `git`** and with a stock package base. **Update the system and install git before cloning the repository** — the clone itself depends on it:
+
+```bash
+# On a fresh Fedora Server minimal host, BEFORE cloning:
+sudo dnf upgrade -y
+sudo dnf install -y git
+
+# Now clone and enter the repository
+git clone https://github.com/sec-moose/pendora.git
+cd pendora
+```
+
+### Server Quick Flow
+
+```bash
+# Phase 1: Sway desktop, greetd + Noctalia greeter, XDG user folders,
+#          cockpit.socket disabled, Plymouth spinner (reboot prompt on completion)
+./install.sh --server
+
+# ... reboot, log in at the Noctalia greeter ...
+
+# Phase 2: full pentest toolkit
+./install.sh --all
+```
+
+Full details, the phase-1 verification checklist and all guardrails: **[Usage Instructions → 7. Server Minimal / Two-Phase Install](#7-server-minimal--two-phase-install---server---s--dry-run-verified)** below.
+
 ---
 
 ## Requirements & Test Environment
@@ -114,7 +155,7 @@ The scripts and package templates in this project are designed, tested, and vali
    > The script handles `sudo` internally for tasks requiring root (DNF, hostname, Docker service). Running the entire script under `sudo` will incorrectly install user tools (`pipx`, `.zshrc`) into `/root/` instead of your user environment.
 
 3. **Installation Duration, Prompts & Network Downloads**:
-   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 140 RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
+   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 141 RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
    * **Sudo & Interactive Pauses**: Keep an eye on the terminal. The script periodically requests your `sudo` password for privileged operations and pauses to present generated credential cards (Portainer setup token, SysReptor credentials, BloodHound password) waiting for `[Enter]` to proceed.
    * **OWASP ZAP & Dev Tunnels Downloads**: During the upstream installations, downloading **OWASP ZAP** (Flatpak runtimes: `org.freedesktop.Platform`, GNOME runtime, codecs) and the standalone **Microsoft Dev Tunnels CLI** (`devtunnel`) binary takes time. The terminal may appear frozen or idle for several minutes while downloading these packages. **This is completely normal and has not hung during testing** — do not terminate the process; it will proceed automatically once the downloads finish.
 ---
@@ -293,7 +334,7 @@ Installs the complete penetration testing toolkit (all native security packages 
 ```
 
 ### 7. Server Minimal / Two-Phase Install (`--server` / `-S`) — Dry-Run Verified
-Phase 1 provisions a bootable Sway desktop on a Fedora Server **minimal** base (no GNOME or GDM required). It installs the Sway stack (`00-base.list` + `70-sway.list`), configures the **greetd** display manager with the **Noctalia greeter** (built from the pinned upstream tag `v1.7.0`; falls back to `tuigreet` if the build fails), applies VM guest fixes (`WLR_NO_HARDWARE_CURSORS=1`, `spice-vdagentd`), and sets the Plymouth boot splash to the `spinner` theme. Pentest tools are deliberately excluded from phase 1:
+Phase 1 provisions a bootable Sway desktop on a Fedora Server **minimal** base (no GNOME or GDM required). It installs the Sway stack (`00-base.list` + `70-sway.list`), creates the standard XDG user directories (`xdg-user-dirs-update` — Server minimal ships a bare `/home/USER`), configures the **greetd** display manager with the **Noctalia greeter** (built from the pinned upstream tag `v1.7.0`; falls back to `tuigreet` if the build fails), applies VM guest fixes (`WLR_NO_HARDWARE_CURSORS=1`, `spice-vdagentd`), disables the Cockpit web console socket on Fedora Server (`cockpit.socket`), and sets the Plymouth boot splash to the `spinner` theme. Pentest tools are deliberately excluded from phase 1:
 
 ```bash
 # Phase 1 (reboots on completion)

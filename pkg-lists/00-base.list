@@ -72,3 +72,6 @@ util-linux                  # Core Linux utilities (provides uuidgen for SysRept
 
 # --- Fonts ---
 source-foundry-hack-fonts   # Hack Nerd Font from official Fedora RPM (terminal glyphs for Alacritty & zsh prompts; audit M7)
+
+# --- XDG User Directories ---
+xdg-user-dirs               # Creates standard user folders (Downloads, Documents, Pictures, ...) — Server minimal ships a bare /home/USER

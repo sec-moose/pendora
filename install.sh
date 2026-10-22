@@ -591,7 +591,25 @@ configure_server_login() {
     echo -e "${BOLD}Configuring Server Login (greetd + Noctalia Greeter)${NC}"
     echo "===================================================="
 
-    # 1. Invisible-cursor fix: virtio-gpu/bochs hardware-cursor plane flips fail under
+    # 1. Standard XDG user directories: Fedora Server minimal ships a bare
+    #    /home/USER (no Downloads/Documents/Pictures/...). xdg-user-dirs-update
+    #    is idempotent and also writes ~/.config/user-dirs.dirs for the session.
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] xdg-user-dirs-update as target user (creates Desktop, Downloads, Documents, Music, Pictures, Public, Videos)"
+    else
+        local target_user="${SUDO_USER:-$USER}"
+        local target_home
+        target_home="$(getent passwd "$target_user" 2>/dev/null | cut -d: -f6)"
+        [ -z "$target_home" ] && target_home="$HOME"
+        local xdg_cmd=(xdg-user-dirs-update)
+        if [ -n "${SUDO_USER:-}" ] && [ "$EUID" -eq 0 ]; then
+            xdg_cmd=(sudo -u "$target_user" env HOME="$target_home" USER="$target_user" xdg-user-dirs-update)
+        fi
+        "${xdg_cmd[@]}" || { log_error "Failed to create standard user directories."; return 1; }
+        log_success "Standard user directories provisioned for ${target_user}."
+    fi
+
+    # 2. Invisible-cursor fix: virtio-gpu/bochs hardware-cursor plane flips fail under
     #    wlroots in virtual machines (sway audit 2026-10-22).
     if grep -q '^WLR_NO_HARDWARE_CURSORS=' /etc/environment 2>/dev/null; then
         log_info "WLR_NO_HARDWARE_CURSORS already present in /etc/environment."
@@ -602,7 +620,7 @@ configure_server_login() {
         log_success "WLR_NO_HARDWARE_CURSORS=1 set in /etc/environment."
     fi
 
-    # 2. SPICE guest agent daemon: system service, safe to enable headless. Required for
+    # 3. SPICE guest agent daemon: system service, safe to enable headless. Required for
     #    the clipboard socket /run/spice-vdagentd/spice-vdagent-sock used by the bridge.
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] systemctl enable --now spice-vdagentd"
@@ -614,12 +632,28 @@ configure_server_login() {
         fi
     fi
 
-    # 3. Display manager: greetd (pkg-lists/70-sway.list) with the Noctalia greeter.
+    # 4. Cockpit web console socket: Fedora Server enables it (port 9090) by default;
+    #    a pentest VM has no use for a web management console. Server-specific —
+    #    hosts without the Fedora Server release identification are left untouched.
+    if ! rpm -q fedora-release-server &>/dev/null; then
+        log_info "Not a Fedora Server host — cockpit.socket left untouched."
+    elif [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] systemctl disable --now cockpit.socket (if enabled or active)"
+    elif systemctl is-enabled cockpit.socket &>/dev/null || systemctl is-active cockpit.socket &>/dev/null; then
+        sudo systemctl disable --now cockpit.socket 2>/dev/null \
+            && log_success "cockpit.socket disabled (web console closed)." \
+            || log_warn "Could not disable cockpit.socket — verify manually with: systemctl status cockpit.socket"
+    else
+        log_info "cockpit.socket not enabled on this host."
+    fi
+
+    # 5. Display manager: greetd (pkg-lists/70-sway.list) with the Noctalia greeter.
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] Build + install noctalia-greeter from pinned upstream tag ${GREETER_TAG} @ ${GREETER_COMMIT} (fallback: tuigreet)"
         echo "  [DRY-RUN] Ensure system user 'greeter' and /var/lib/noctalia-greeter (0750 greeter:greeter)"
         echo "  [DRY-RUN] Write /etc/greetd/config.toml (default_session = noctalia-greeter-session, fallback tuigreet)"
         echo "  [DRY-RUN] Refuse if another display manager (gdm/sddm/lightdm/lxdm/xdm) is enabled or active"
+        echo "  [DRY-RUN] Add greetd plymouth-ordering drop-in (LUKS-safe boot hand-off)"
         echo "  [DRY-RUN] systemctl enable --now greetd ; disable getty@tty1 on success"
         return 0
     fi
@@ -677,6 +711,16 @@ configure_server_login() {
     if [ "${dm_taken}" = true ]; then
         return 1
     fi
+
+    # LUKS/btrfs hosts: at boot, plymouth holds the console during disk unlock and
+    # can starve greetd of VT 1 — greetd dies and logind falls back to a tty login
+    # (live-test finding on the encrypted Server VM). Order greetd after plymouth.
+    sudo mkdir -p /etc/systemd/system/greetd.service.d \
+        || { log_error "Failed to create the greetd drop-in directory."; return 1; }
+    printf '[Unit]\nAfter=plymouth-quit.service\n' \
+        | sudo tee /etc/systemd/system/greetd.service.d/10-pendora-plymouth-order.conf >/dev/null \
+        || { log_error "Failed to write the greetd plymouth-ordering drop-in."; return 1; }
+    sudo systemctl daemon-reload
 
     if sudo systemctl enable --now greetd; then
         log_success "greetd display manager enabled."
@@ -1260,20 +1304,9 @@ if [ "$INSTALL_SWAY" = true ]; then
     configure_screensharing_systemd
 fi
 
-# Configure display manager & VM guest integration for the --server profile (phase 1)
-if [ "$SERVER_MODE" = true ]; then
-    configure_server_login
-    configure_boot_splash || log_warn "Boot splash configuration failed — continuing without it."
-fi
-
 # Deploy Alacritty configuration if requested
 if [ "$INSTALL_ALACRITTY" = true ]; then
     deploy_alacritty_config
-fi
-
-# Run Docker containers section if requested
-if [ "$INSTALL_DOCKER_CONTAINERS" = true ]; then
-    run_containers_install
 fi
 
 # Deploy Neovim configuration if requested
@@ -1281,7 +1314,14 @@ if [ "$INSTALL_NVIM" = true ]; then
     deploy_nvim_config
 fi
 
+# Run Docker containers section if requested
+if [ "$INSTALL_DOCKER_CONTAINERS" = true ]; then
+    run_containers_install
+fi
+
 # Deploy wallpaper if requested
+# (before server-login configuration: a late failure must never leave the sway
+#  session without its wallpaper — live-test finding, 2026-10-23)
 if [ "$INSTALL_WALLPAPER" = true ]; then
     deploy_wallpaper
 fi
@@ -1289,6 +1329,15 @@ fi
 # Set system hostname if requested
 if [ "$SET_HOSTNAME" = true ]; then
     set_system_hostname
+fi
+
+# Configure display manager & VM guest integration for the --server profile (phase 1)
+# Degraded on purpose: a server-login failure must not strip the wallpaper, hostname,
+# or alacritty/nvim deployments that already succeeded (live-test finding, 2026-10-23).
+if [ "$SERVER_MODE" = true ]; then
+    configure_server_login \
+        || log_warn "Server login configuration failed — a greeter may be missing. Check the [ERROR] lines above and re-run './install.sh --server' (idempotent)."
+    configure_boot_splash || log_warn "Boot splash configuration failed — continuing without it."
 fi
 
 log_success "Pendora execution completed!"
