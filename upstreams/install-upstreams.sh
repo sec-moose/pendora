@@ -803,7 +803,10 @@ if [ ${#TOOLS[@]} -eq 0 ]; then
 fi
 
 if [[ " ${TOOLS[*]} " =~ " all " ]]; then
-    TOOLS=("metasploit" "burpsuite" "seclists" "evil-winrm" "zap" "hack-font" "rustscan" "naabu" "portainer" "sysreptor" "bloodhound" "devtunnel" "responder")
+    # hack-font excluded from 'all' (audit M7): the Hack Nerd Font ships via the
+    # official source-foundry-hack-fonts RPM in pkg-lists/00-base.list on every
+    # profile; the explicit 'hack-font' target remains available opt-in.
+    TOOLS=("metasploit" "burpsuite" "seclists" "evil-winrm" "zap" "rustscan" "naabu" "portainer" "sysreptor" "bloodhound" "devtunnel" "responder")
 elif [[ " ${TOOLS[*]} " =~ " containers " ]] || [[ " ${TOOLS[*]} " =~ " docker " ]]; then
     TOOLS=("portainer" "sysreptor" "bloodhound")
 fi

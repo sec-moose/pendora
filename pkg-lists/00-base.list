@@ -69,3 +69,6 @@ readline-devel              # GNU Readline library headers (required by readline
 # --- Cryptography & Low-level Utilities ---
 openssl                     # TLS/SSL cryptography toolkit (needed for SysReptor)
 util-linux                  # Core Linux utilities (provides uuidgen for SysReptor)
+
+# --- Fonts ---
+source-foundry-hack-fonts   # Hack Nerd Font from official Fedora RPM (terminal glyphs for Alacritty & zsh prompts; audit M7)

@@ -2,9 +2,11 @@
 # 70-sway.list: Sway Wayland Tiling Compositor & Desktop Dependencies
 # ==============================================================================
 # Instructions:
-#  - Installed when using --sway, -W, or --all
+#  - Installed when using --sway, -W, --server, -S, or --all
 #  - Excluded when using --basic
 #  - 100% native official Fedora RPM packages (no COPR required)
+#  - noctalia-greeter (display manager UI) is built from upstream in --server mode;
+#    everything in this file installs from official Fedora repositories
 #  - Inline comments with '#' are fully supported
 # ==============================================================================
 
@@ -30,3 +32,15 @@ xorg-x11-server-Xwayland    # Xwayland server enabling X11 compatibility in Sway
 spice-vdagent               # SPICE guest agent daemon for QEMU/KVM virtual machines
 python3-gobject             # Python GObject introspection for GTK clipboard bridge
 gtk3                        # GTK3 toolkit library used by SPICE clipboard bridge
+
+# --- Session Runtime Parity (Fedora Server minimal; sway audit 2026-10-22) ---
+dbus-tools                  # dbus-update-activation-environment for portal environment (sway config:9)
+lxqt-policykit              # Graphical polkit authentication agent (privilege prompts hang without it on minimal)
+firefox                     # Browser bound to $mod+b (sway config:98); absent from every other list
+pipewire                    # Audio/screenshare daemon; hard requirement of the Noctalia bar
+wireplumber                 # PipeWire session manager (Noctalia only pulls wireplumber-libs transitively)
+gnome-keyring               # Secret portal backend per xdg-desktop-portal sway-portals.conf
+
+# --- Display Manager (greetd stack for --server phase 1) ---
+greetd                      # Minimal Wayland-native display manager (greeter-agnostic session harness)
+tuigreet                    # Terminal greeter; configured fallback when noctalia-greeter is unavailable

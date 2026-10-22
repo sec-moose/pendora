@@ -8,8 +8,8 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
 
 - [ ] **Sway VM Display Auto-Rescaling**:
   - Investigate dynamic display rescaling on window drag under QEMU/SPICE virtual machines (currently defaults to fixed `1080p` in `sway/.config/sway/config`). Note: dynamic resizing was attempted (`7a77b8c`) and reverted to 1080p (`a73643d`) — document why before retrying; see README "Known Issues".
-- [ ] **SPICE Clipboard Bridge & User-Session De-duplication**:
-  - Resolve the dual invocation of `sway-spice-clipboard-bridge` (currently launched both via Sway's `exec` autostart in `sway/.config/sway/config` and via `systemd/user/sway-spice-clipboard-bridge.service`). Standardize on a single lifecycle mechanism; a script-level `flock` singleton already makes duplicate instances exit immediately, so the current impact is a briefly spawned redundant process per session rather than SPICE socket contention.
+- [x] **SPICE Clipboard Bridge & User-Session De-duplication**:
+  - Resolved: `sway/.config/sway/config` no longer `exec`s the bridge; the systemd user unit is the single lifecycle mechanism, enabled bus-free via `sway-session.target.wants` at install time (headless-safe) and started by `sway-session.target` on login. The script-level `flock` singleton remains as a belt-and-suspenders guard.
 
 ---
 
@@ -26,6 +26,9 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
 
 ## 🛠️ Tooling & Upstream Additions
 
+- [ ] **Noctalia Greeter — Official Fedora Packaging Watch**:
+  - `--server` builds noctalia-greeter from the pinned upstream tag (`GREETER_TAG` in `install.sh`, currently `v1.7.0`) because it is not yet in the official Fedora repositories. When an official `noctalia-greeter` package lands: add it to `pkg-lists/70-sway.list`, delete `install_noctalia_greeter` and its build-dependency block, and keep only the greetd configuration.
+  - Source: [https://github.com/noctalia-dev/noctalia-greeter](https://github.com/noctalia-dev/noctalia-greeter)
 - [ ] **ADWS Domain Dump (r4cken fork)**:
   - Active Directory Web Services dump utility (`pipx`, same `git+https` pattern as NetExec in `pipx-lists/pipx-tools.list`).
   - Source: [https://github.com/r4cken/adwsdomaindump](https://github.com/r4cken/adwsdomaindump)

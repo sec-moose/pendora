@@ -86,7 +86,6 @@ exec wl-paste --type image --watch cliphist store
 exec_always python3 ~/.config/sway/scripts/inactive-windows-transparency.py --focused 1.0 --opacity 0.88
 exec_always ~/.config/sway/scripts/apply-gnome-keyboard-layout.sh
 exec spice-vdagent -x
-exec ~/.config/sway/scripts/sway-spice-clipboard-bridge
 
 #---------------------
 #---- KEYBINDINGS ----
