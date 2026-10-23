@@ -134,6 +134,8 @@ A quick-reference summary for every tool category, standalone suite, and contain
 
 ## 10. Sway Dynamic Desktop (`70-sway.list` & `sway/`)
 
+`SUPER` is the Windows key by default.
+
 | Keybinding | Action |
 |---|---|
 | `SUPER + T` | Open Alacritty terminal |
@@ -152,3 +154,6 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | `SUPER + SHIFT + T` | Toggle floating mode for window |
 | `SUPER + SHIFT + F` | Toggle fullscreen mode for window |
 | `SUPER + Arrow Keys` | Move focus between windows (Left, Right, Up, Down) |
+| `SUPER + SHIFT + Arrow Keys` | Move focused window (Left, Right, Up, Down) |
+| `SUPER + SHIFT + R` | Restart the Noctalia shell |
+| `SUPER + Mouse Drag` | Move floating window (left-drag) / resize (right-drag) |
