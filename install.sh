@@ -649,12 +649,12 @@ configure_server_login() {
     # 5. Display manager: greetd (pkg-lists/70-sway.list) with the Noctalia greeter.
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] Build + install noctalia-greeter from pinned upstream tag ${GREETER_TAG} @ ${GREETER_COMMIT} (fallback: tuigreet)"
-        echo "  [DRY-RUN] Ensure system user 'greeter' and /var/lib/noctalia-greeter (0750 greeter:greeter)"
+        echo "  [DRY-RUN] Ensure system user 'greeter' and /var/lib/greetd + /var/lib/noctalia-greeter (0750 greeter:greeter)"
         echo "  [DRY-RUN] Write /etc/greetd/config.toml (default_session = noctalia-greeter-session, fallback tuigreet)"
         echo "  [DRY-RUN] Refuse if another display manager (gdm/sddm/lightdm/lxdm/xdm) is enabled or active"
         echo "  [DRY-RUN] systemctl set-default graphical.target"
         echo "  [DRY-RUN] Add greetd plymouth-ordering drop-in (LUKS-safe boot hand-off)"
-        echo "  [DRY-RUN] systemctl enable --now greetd ; disable getty@tty1 on success"
+        echo "  [DRY-RUN] systemctl enable --now greetd (supersedes getty@tty1 via Conflicts=)"
         return 0
     fi
 
@@ -671,6 +671,10 @@ configure_server_login() {
             || { log_error "Failed to create system user 'greeter'."; return 1; }
         log_success "Created system user 'greeter'."
     fi
+    # Provision the greeter's home: useradd -d does not create it, and without a
+    # correctly owned home the greeter's systemd --user instance fails to manage
+    # its unit dirs ("Failed to resolve symlink ... Permission denied").
+    sudo install -d -m 0750 -o greeter -g greeter /var/lib/greetd
     sudo mkdir -p /var/lib/noctalia-greeter \
         && sudo chown greeter:greeter /var/lib/noctalia-greeter \
         && sudo chmod 0750 /var/lib/noctalia-greeter \
@@ -730,10 +734,13 @@ configure_server_login() {
     sudo systemctl daemon-reload
 
     if sudo systemctl enable --now greetd; then
+        # No getty@tty1 disable here: greetd's unit ships Conflicts=getty@tty1.service,
+        # so VT 1 hand-off is handled at runtime — and if greetd is ever stopped for
+        # maintenance, the getty fallback console keeps working (live-test finding:
+        # stopping greetd previously left a dead, untyped VT 1). Re-enable it for
+        # hosts already provisioned by older runs that disabled it.
+        sudo systemctl enable getty@tty1 2>/dev/null || true
         log_success "greetd display manager enabled."
-        # Retire the tty1 getty only after greetd owns VT 1 — never leave the host
-        # without a display manager AND a console (audit M4).
-        sudo systemctl disable --now getty@tty1 2>/dev/null || true
     else
         log_error "Failed to enable greetd."
         return 1
@@ -755,8 +762,15 @@ configure_boot_splash() {
 
     # -R regenerates the initramfs so the spinner theme is embedded for early boot.
     sudo plymouth-set-default-theme -R spinner \
-        || { log_error "Failed to set the Plymouth spinner theme."; return 1; }
-    log_success "Plymouth boot splash set to spinner (initramfs regenerated)."
+        || { log_error "Failed to run plymouth-set-default-theme -R spinner."; return 1; }
+    local current_theme
+    current_theme="$(plymouth-set-default-theme 2>/dev/null || echo unknown)"
+    if [ "${current_theme}" = "spinner" ]; then
+        log_success "Plymouth boot splash set to spinner (initramfs regenerated)."
+    else
+        log_error "Plymouth theme query returned '${current_theme}' instead of spinner."
+        return 1
+    fi
 }
 
 deploy_sway_config() {
@@ -1337,9 +1351,9 @@ fi
 # Degraded on purpose: a server-login failure must not strip the wallpaper, hostname,
 # or alacritty/nvim deployments that already succeeded (live-test finding, 2026-10-23).
 if [ "$SERVER_MODE" = true ]; then
+    configure_boot_splash || log_warn "Boot splash configuration failed — continuing without it."
     configure_server_login \
         || log_warn "Server login configuration failed — a greeter may be missing. Check the [ERROR] lines above and re-run './install.sh --server' (idempotent)."
-    configure_boot_splash || log_warn "Boot splash configuration failed — continuing without it."
 fi
 
 log_success "Pendora execution completed!"
