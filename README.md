@@ -41,13 +41,13 @@ Pendora organizes tooling, services, and configuration into four dedicated tiers
 │ 1. Native DNF RPM │ 2. Pipx Isolated  │ 3. Containers  │ 4. Shell &    │
 │    (pkg-lists/)   │    (pipx-lists/)  │    & Upstreams │    Look-&-Feel│
 │                   │                   │   (upstreams/) │    (zsh/)     │
-│ 141 Fedora pkgs   │ 11 Python tools   │ Portainer:9443 │ Zsh setup     │
+│ 142 Fedora pkgs   │ 11 Python tools   │ Portainer:9443 │ Zsh setup     │
 │ Scanners, debug,  │ netexec, impacket │ SysReptor:8000 │ Completions   │
 │ compilers, sniff  │ mitmproxy, sqlmap │ BloodHound:8080│ Aliases, hl   │
 └───────────────────┴───────────────────┴────────────────┴───────────────┘
 ```
 
-1. **Native Fedora RPMs (`pkg-lists/`)**: 141 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, forensics, and the Sway desktop runtime.
+1. **Native Fedora RPMs (`pkg-lists/`)**: 142 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, forensics, and the Sway desktop runtime.
 2. **Pipx Isolated Python Tools (`pipx-lists/`)**: Offensive Python utilities requiring isolated environments to prevent library conflicts with system Python (`netexec`, `impacket`, `certipy-ad`, `bloodhound-ce`, `updog`, `sqlmap`, etc.).
 3. **Standalone Upstreams & Containers (`upstreams/`)**: Vendor installers, git clones, and Docker containers for enterprise suites (`metasploit`, `burpsuite`, `seclists`, `evil-winrm`, `zap`, `hack-font`, `rustscan`, `naabu`, `portainer`, `sysreptor`, `bloodhound`, `devtunnel`, `responder`).
 4. **Interactive Shell Environment (`zsh/`)**: Interactive Zsh configuration with autosuggestions, syntax highlighting, and pentesting aliases.
@@ -62,7 +62,7 @@ Pendora provides full flexibility over your graphical environment. You can choos
 > Installing Sway does not remove or alter your GNOME desktop. You can seamlessly switch between **GNOME** and **Sway** at any time on the login screen (GDM): click your username, select the gear icon (⚙️) in the bottom-right corner, and select your desired session before entering your password.
 > 💡 **Testing Status & Recommendations:**  
 > * **Tested & Verified — Full Installation (`./install.sh --all` / `--all --yes`)**: End-to-end single-pass deployment verifying all native security packages (00–70), Pipx tools, Upstream suites, Docker containers, and the Sway tiling desktop environment.
-> * **Tested & Verified — Sway Dynamic Desktop (`./install.sh --sway`)**: Deploys the lightweight Sway tiling compositor, Noctalia desktop shell, Hack Nerd Font, focus-based window opacity, crisp 1080p display rendering, automatic GNOME keyboard layout inheritance, and bidirectional SPICE host/guest clipboard sharing. The Sway package stack is 100% native Fedora RPMs (zero COPR repositories required); the Hack Nerd Font ships via the official `source-foundry-hack-fonts` RPM in `00-base.list` on every profile (the upstreams `hack-font` target remains as an opt-in legacy alternative).
+> * **Tested & Verified — Sway Dynamic Desktop (`./install.sh --sway`)**: Deploys the lightweight Sway tiling compositor, Noctalia desktop shell, Hack Nerd Font, focus-based window opacity, crisp 1080p display rendering, automatic GNOME keyboard layout inheritance, and bidirectional SPICE host/guest clipboard sharing. The Sway package stack is 100% native Fedora RPMs (zero COPR repositories required); the Hack Nerd Font is installed from the official Nerd Fonts GitHub release (same as the main branch).
 > * **Tested & Verified — Basic Pentest Setup (`./install.sh --basic`)**: Keeps your default Fedora GNOME desktop intact while deploying all pentest CLI tools, Pipx tools, Docker container suites, Zsh, Neovim, and Alacritty.
 
 | Mode | Flag | Validation Status | Included Components |
@@ -155,7 +155,7 @@ The scripts and package templates in this project are designed, tested, and vali
    > The script handles `sudo` internally for tasks requiring root (DNF, hostname, Docker service). Running the entire script under `sudo` will incorrectly install user tools (`pipx`, `.zshrc`) into `/root/` instead of your user environment.
 
 3. **Installation Duration, Prompts & Network Downloads**:
-   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 141 RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
+   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 142 RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
    * **Sudo & Interactive Pauses**: Keep an eye on the terminal. The script periodically requests your `sudo` password for privileged operations and pauses to present generated credential cards (Portainer setup token, SysReptor credentials, BloodHound password) waiting for `[Enter]` to proceed.
    * **OWASP ZAP & Dev Tunnels Downloads**: During the upstream installations, downloading **OWASP ZAP** (Flatpak runtimes: `org.freedesktop.Platform`, GNOME runtime, codecs) and the standalone **Microsoft Dev Tunnels CLI** (`devtunnel`) binary takes time. The terminal may appear frozen or idle for several minutes while downloading these packages. **This is completely normal and has not hung during testing** — do not terminate the process; it will proceed automatically once the downloads finish.
 ---

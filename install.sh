@@ -446,19 +446,18 @@ stow_module() {
 }
 
 ensure_hack_nerd_font() {
-    # Hack Nerd Font ships via the official source-foundry-hack-fonts RPM
-    # (pkg-lists/00-base.list). The old GitHub 'latest' tarball fetch was removed:
-    # it piped curl|tar with errors swallowed by || true, required network at
-    # install time, and silently no-oped when fontconfig was absent on minimal
-    # hosts (sway audit 2026-10-22, finding A3).
-    if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] Verify Hack Nerd Font (source-foundry-hack-fonts RPM)"
-        return 0
-    fi
-    if command -v fc-list &>/dev/null && fc-list 2>/dev/null | grep -qi "Hack Nerd Font"; then
-        log_success "Hack Nerd Font available (source-foundry-hack-fonts RPM)."
-    else
-        log_warn "Hack Nerd Font not in font cache yet. It is installed via the source-foundry-hack-fonts RPM in the package set."
+    local font_dir="/usr/local/share/fonts/HackNerdFont"
+    if [ ! -d "$font_dir" ] || [ -z "$(ls -A "$font_dir" 2>/dev/null)" ]; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] Install Hack Nerd Font to $font_dir"
+            return 0
+        fi
+        log_info "Hack Nerd Font not found. Installing from upstream release..."
+        local font_url="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.tar.xz"
+        sudo mkdir -p "$font_dir"
+        curl -fsSL "$font_url" | sudo tar -xJ -C "$font_dir" 2>/dev/null || true
+        sudo fc-cache -f 2>/dev/null || true
+        log_success "Hack Nerd Font installed to $font_dir"
     fi
 }
 
@@ -653,6 +652,7 @@ configure_server_login() {
         echo "  [DRY-RUN] Ensure system user 'greeter' and /var/lib/noctalia-greeter (0750 greeter:greeter)"
         echo "  [DRY-RUN] Write /etc/greetd/config.toml (default_session = noctalia-greeter-session, fallback tuigreet)"
         echo "  [DRY-RUN] Refuse if another display manager (gdm/sddm/lightdm/lxdm/xdm) is enabled or active"
+        echo "  [DRY-RUN] systemctl set-default graphical.target"
         echo "  [DRY-RUN] Add greetd plymouth-ordering drop-in (LUKS-safe boot hand-off)"
         echo "  [DRY-RUN] systemctl enable --now greetd ; disable getty@tty1 on success"
         return 0
@@ -712,6 +712,13 @@ configure_server_login() {
         return 1
     fi
 
+    # Fedora Server boots multi-user.target by default — greetd is wanted by
+    # graphical.target, so without this the greeter never activates at boot and
+    # logind falls back to a tty login (live-test finding, 2026-10-23).
+    sudo systemctl set-default graphical.target \
+        || { log_error "Failed to set the default boot target to graphical."; return 1; }
+    log_success "Default boot target set to graphical."
+
     # LUKS/btrfs hosts: at boot, plymouth holds the console during disk unlock and
     # can starve greetd of VT 1 — greetd dies and logind falls back to a tty login
     # (live-test finding on the encrypted Server VM). Order greetd after plymouth.
@@ -736,19 +743,14 @@ configure_server_login() {
 configure_boot_splash() {
     # Set the Plymouth boot splash to the 'spinner' theme so the boot sequence
     # hands off cleanly to the Noctalia greeter instead of console text.
+    # The theme package ships via pkg-lists/00-base.list (plymouth-theme-spinner).
     echo
     echo -e "${BOLD}Configuring Boot Splash (Plymouth spinner)${NC}"
     echo "===================================================="
 
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] sudo dnf install -y plymouth-theme-spinner plymouth-scripts"
         echo "  [DRY-RUN] sudo plymouth-set-default-theme -R spinner"
         return 0
-    fi
-
-    if ! command -v plymouth-set-default-theme &>/dev/null; then
-        log_info "Installing Plymouth spinner theme..."
-        sudo dnf install -y plymouth-theme-spinner plymouth-scripts || { log_error "Failed to install plymouth-theme-spinner."; return 1; }
     fi
 
     # -R regenerates the initramfs so the spinner theme is embedded for early boot.
