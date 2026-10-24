@@ -19,6 +19,7 @@ INSTALL_ZSH=false
 INSTALL_SWAY=false
 INSTALL_ALACRITTY=false
 INSTALL_NVIM=false
+INSTALL_BTOP=false
 INSTALL_WALLPAPER=false
 INSTALL_DOCKER_CONTAINERS=false
 SET_HOSTNAME=false
@@ -74,6 +75,7 @@ ${BOLD}Options:${NC}
   -S, --server             Phase 1 server profile: Sway desktop stack + display manager (greetd & Noctalia greeter), VM guest fixes & Plymouth spinner splash; run '--all' afterwards for pentest tools
   -T, --alacritty          Deploy Alacritty terminal configuration & Catppuccin Macchiato theme
   -N, --nvim               Deploy Neovim/LazyVim configuration & Catppuccin Macchiato theme
+  -t, --btop               Deploy btop configuration & Catppuccin Macchiato theme
   -H, --hostname           Set system hostname to 'pendora'
   -B, --wallpaper          Deploy and apply Pendora custom wallpaper
   -b, --basic              Basic pentest setup without Sway (00-60 DNF + pipx + upstreams + zsh + alacritty + nvim + wallpaper)
@@ -408,6 +410,13 @@ stow_module() {
                 local n_bak="$target_home/.config/nvim.bak.$(date +%Y%m%d_%H%M%S)"
                 log_info "Existing non-symlink directory $target_home/.config/nvim found. Backing up to $n_bak"
                 mv "$target_home/.config/nvim" "$n_bak"
+            fi
+            ;;
+        btop)
+            if [ -d "$target_home/.config/btop" ] && [ ! -L "$target_home/.config/btop" ]; then
+                local b_bak="$target_home/.config/btop.bak.$(date +%Y%m%d_%H%M%S)"
+                log_info "Existing non-symlink directory $target_home/.config/btop found. Backing up to $b_bak"
+                mv "$target_home/.config/btop" "$b_bak"
             fi
             ;;
     esac
@@ -843,6 +852,22 @@ deploy_nvim_config() {
     fi
     stow_module "nvim"
 }
+
+deploy_btop_config() {
+    echo
+    echo -e "${BOLD}Deploying btop Configuration (GNU Stow)${NC}"
+    echo "===================================================="
+    if ! command -v btop &>/dev/null; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] sudo dnf install -y btop"
+        else
+            log_info "btop not found. Installing btop via dnf..."
+            sudo dnf install -y btop || true
+        fi
+    fi
+    stow_module "btop"
+}
+
 deploy_wallpaper() {
     echo
     echo -e "${BOLD}Deploying Pendora Desktop Wallpaper & User Profile Logo${NC}"
@@ -1070,6 +1095,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_ZSH=true
             INSTALL_ALACRITTY=true
             INSTALL_NVIM=true
+            INSTALL_BTOP=true
             INSTALL_WALLPAPER=true
             SET_HOSTNAME=true
             INSTALL_SWAY=false
@@ -1080,6 +1106,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_WALLPAPER=true
             INSTALL_ZSH=true
             INSTALL_NVIM=true
+            INSTALL_BTOP=true
             INSTALL_ALACRITTY=true
             SET_HOSTNAME=true
             shift
@@ -1090,6 +1117,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_WALLPAPER=true
             INSTALL_ZSH=true
             INSTALL_NVIM=true
+            INSTALL_BTOP=true
             INSTALL_ALACRITTY=true
             SET_HOSTNAME=true
             shift
@@ -1100,6 +1128,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -N|--nvim|--neovim)
             INSTALL_NVIM=true
+            shift
+            ;;
+        -t|--btop)
+            INSTALL_BTOP=true
             shift
             ;;
         -B|--wallpaper)
@@ -1122,6 +1154,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_SWAY=true
             INSTALL_ALACRITTY=true
             INSTALL_NVIM=true
+            INSTALL_BTOP=true
             INSTALL_WALLPAPER=true
             SET_HOSTNAME=true
             shift
@@ -1328,6 +1361,11 @@ fi
 # Deploy Neovim configuration if requested
 if [ "$INSTALL_NVIM" = true ]; then
     deploy_nvim_config
+fi
+
+# Deploy btop configuration if requested
+if [ "$INSTALL_BTOP" = true ]; then
+    deploy_btop_config
 fi
 
 # Run Docker containers section if requested

@@ -11,10 +11,14 @@ exec systemctl --user start sway-session.target
 exec /usr/libexec/xdg-desktop-portal-wlr -r
 exec sleep 1 && /usr/libexec/xdg-desktop-portal-gtk
 
-#-----------------
-#---- MONITOR ----
-#-----------------
-output * resolution 1920x1080 position 0,0 scale 1
+# Resolution intentionally unpinned: sway adopts the QEMU/SPICE viewer
+# window size at session start (virtio-gpu). Live resize does NOT propagate:
+# without virtio-gpu blob the guest only reads the mode at startup, so later
+# host window resizes are ignored. Enable blob='true' on the virtio video
+# model hypervisor-side for true dynamic scanout. Unlucky boots can still
+# show QEMU's 1024x768 default (window size unknown at negotiation).
+# See TODO.md "Sway VM Display Auto-Rescaling".
+# output * resolution 1920x1080 position 0,0 scale 1
 output * bg /usr/share/backgrounds/pendora/wallpaper.svg fill
 
 #------------------

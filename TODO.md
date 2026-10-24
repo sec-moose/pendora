@@ -6,8 +6,10 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
 
 ## 🐛 Bugfixes & Active Investigations
 
-- [ ] **Sway VM Display Auto-Rescaling**:
-  - Investigate dynamic display rescaling on window drag under QEMU/SPICE virtual machines (currently defaults to fixed `1080p` in `sway/.config/sway/config`). Note: dynamic resizing was attempted (`7a77b8c`) and reverted to 1080p (`a73643d`) — document why before retrying; see README "Known Issues".
+- [x] **Sway VM Display Auto-Rescaling**:
+  - Resolved (investigation): with the `output * resolution 1920x1080` pin in `sway/.config/sway/config` commented out, Sway adopts the QEMU/SPICE viewer window size at session start (virtio-gpu). History: the first attempt (`7a77b8c`) was reverted to fixed 1080p (`a73643d`) over the 1024×768 fallback this unpins.
+  - Limitation (by design of virtio-gpu without blob): live resize does NOT propagate — the guest reads the mode only at display-pipeline start, so later host window resizes are ignored.
+  - Follow-up (hypervisor-side): enable `blob='true'` on the virtio video model (QEMU ≥ 6.1) for true dynamic scanout; a `<resolution x='1920' y='1080'/>` subelement additionally pins the boot mode to counter the 1024×768 fallback. Guest config stays unpinned.
 - [x] **SPICE Clipboard Bridge & User-Session De-duplication**:
   - Resolved: `sway/.config/sway/config` no longer `exec`s the bridge; the systemd user unit is the single lifecycle mechanism, enabled bus-free via `sway-session.target.wants` at install time (headless-safe) and started by `sway-session.target` on login. The script-level `flock` singleton remains as a belt-and-suspenders guard.
 

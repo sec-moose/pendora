@@ -184,6 +184,8 @@ pendora/
 │   └── README.md
 ├── alacritty/                  # Alacritty terminal & Catppuccin Macchiato theme
 │   └── .config/alacritty/      # alacritty.toml, catppuccin-macchiato.toml (Stow-compatible)
+├── btop/                       # btop resource monitor & Catppuccin Macchiato theme
+│   └── .config/btop/           # btop.conf, themes/pendora.theme (Stow-compatible)
 ├── sway/                       # Sway tiling window manager & Noctalia shell
 │   └── .config/sway/           # config (Stow-compatible)
 │   └── .config/noctalia/       # config.toml, palettes/Pendora.json (Stow-compatible)
@@ -380,10 +382,9 @@ sudo reboot
   `cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d` · `cd /opt/bloodhound && sudo docker compose up -d`  
   > ℹ️ **Isolated Scope**: Portainer CE auto-starts on boot (`restart: always`) and manages all three stacks.
 
-* **Sway Virtual Machine Viewer Rescaling (Work in Progress)**:  
+* **Sway Virtual Machine Viewer Rescaling (Partially Resolved)**:  
   When running the Sway session inside a virtual machine (e.g., `virt-manager` / QEMU with SPICE):
-  * **Window Rescaling**: Dynamically dragging or rescaling the virtual machine viewer window does not resize the desktop session in full (session operates at configured 1080p).
+  * **Window Rescaling**: The fixed `1080p` output pin is removed, so the session adopts the viewer window's size **at VM start**. Live resize does not propagate: without virtio-gpu `blob` the guest reads the mode only at display-pipeline start, so later window resizes are ignored. 🔧 **Enable live resize hypervisor-side**: add `blob='true'` to the virtio `<model>` in the domain XML (QEMU ≥ 6.1); a `<resolution x='1920' y='1080'/>` subelement additionally pins the boot mode against the 1024×768 fallback.
   * **Host-to-VM Clipboard Sharing (Resolved & Verified)**: Bidirectional copy-paste between host and guest operates out of the box via the integrated `sway-spice-clipboard-bridge` service and `spice-vdagent -x`.  
-  > 💡 **Tip**: If dynamic display auto-rescaling on window drag is required for a specific workflow, you can simply select **GNOME** on the login screen (GDM), where SPICE guest agent display auto-configuration is natively supported.
 
 > 📌 **Project Roadmap**: For upcoming feature additions, tool expansions, and installer improvements, check [TODO.md](TODO.md).
