@@ -131,6 +131,7 @@ The scripts and package templates in this project are designed, tested, and vali
 * **Operating System**: Up-to-date [Fedora Workstation](https://fedoraproject.org/workstation/) (GNOME Desktop)
 * **Virtualization**: Virtual Machine deployed in **Virtual Machine Manager (`virt-manager`)** powered by **QEMU + KVM**
 * **Minimum Tested Baseline**: **4 Virtual Cores (vCPUs)**, **4 GB RAM**, and **25 GB Virtual Hard Drive (Disk)**
+* **Server Test System**: **8 vCPUs**, **8 GB RAM**, **80 GB Disk** — **BTRFS (encrypted)** *(Fedora Server minimal host validating the `--server` install path)*
 * **Recommended Specs for Active Use**:
   * **Processor**: **8 Virtual Cores (vCPUs)** *(recommended for fast multithreaded scanning and cracking: nmap, masscan, ffuf)*
   * **Memory**: **Minimum 8 GB RAM** *(recommended for running concurrent container stacks: SysReptor, BloodHound, and Portainer alongside Burp Suite and browser)*
