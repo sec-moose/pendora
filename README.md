@@ -68,9 +68,9 @@ Pendora provides full flexibility over your graphical environment. You can choos
 | Mode | Flag | Validation Status | Included Components |
 |---|---|---|---|
 | **Full Desktop** | `--all` (`-a`) | **Tested & Verified** | Single-pass combination of everything in Basic **plus** Sway desktop stack (`70-sway.list`, Sway/Noctalia dotfiles, screensharing portal services). |
-| **Sway Desktop** | `--sway` (`-W`) | **Tested & Verified** | Installs `00-base.list` + `70-sway.list`, sets the hostname to `pendora`, sets up screensharing user unit, deploys Sway & Noctalia configuration (Pendora theme), focus opacity daemon, GNOME keyboard auto-sync, Zsh, Neovim, Alacritty, and custom wallpapers. |
+| **Sway Desktop** | `--sway` (`-W`) | **Tested & Verified** | Installs `00-base.list` + `70-sway.list`, sets the hostname to `pendora`, sets up screensharing user unit, deploys Sway & Noctalia configuration (Pendora theme), focus opacity daemon, GNOME keyboard auto-sync, Zsh, Neovim, Alacritty, fastfetch (Pendora shield), and custom wallpapers. |
 | **Server Minimal (Phase 1)** | `--server` (`-S`) | **Dry-Run Verified** | Everything in Sway Desktop plus Fedora Server minimal bring-up: display manager (greetd + Noctalia greeter, `tuigreet` fallback), VM guest fixes (`WLR_NO_HARDWARE_CURSORS`, `spice-vdagentd`), and session-runtime parity packages. Pentest tools deliberately deferred to `--all` (phase 2). |
-| **Basic Pentest** | `--basic` (`-b`) | **Tested & Verified** | Retains existing GNOME desktop. Deploys all pentest packages (00–60), Pipx tools, Docker containers, Kali Zsh prompt, Alacritty, Neovim/LazyVim, hostname, and wallpapers. **Zero desktop/window manager changes.** |
+| **Basic Pentest** | `--basic` (`-b`) | **Tested & Verified** | Retains existing GNOME desktop. Deploys all pentest packages (00–60), Pipx tools, Docker container suites, Kali Zsh prompt, Alacritty, Neovim/LazyVim, fastfetch (Pendora shield), hostname, and wallpapers. **Zero desktop/window manager changes.** |
 
 <p align="center">
   <b>Sway Dynamic Tiling Desktop Environment (Noctalia Shell + Catppuccin Alacritty + Focus Opacity)</b><br/>
@@ -186,6 +186,8 @@ pendora/
 │   └── .config/alacritty/      # alacritty.toml, catppuccin-macchiato.toml (Stow-compatible)
 ├── btop/                       # btop resource monitor & Catppuccin Macchiato theme
 │   └── .config/btop/           # btop.conf, themes/pendora.theme (Stow-compatible)
+├── fastfetch/                  # fastfetch system info & Pendora shield ASCII logo
+│   └── .config/fastfetch/      # config.jsonc — Catppuccin Macchiato, Kali-style prompt (Stow-compatible)
 ├── sway/                       # Sway tiling window manager & Noctalia shell
 │   └── .config/sway/           # config (Stow-compatible)
 │   └── .config/noctalia/       # config.toml, palettes/Pendora.json (Stow-compatible)

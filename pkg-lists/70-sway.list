@@ -41,6 +41,9 @@ pipewire                    # Audio/screenshare daemon; hard requirement of the 
 wireplumber                 # PipeWire session manager (Noctalia only pulls wireplumber-libs transitively)
 gnome-keyring               # Secret portal backend per xdg-desktop-portal sway-portals.conf
 
+# --- Emoji Font (Server minimal ships no fonts; Nerd Font has no emoji glyphs) ---
+google-noto-emoji-fonts     # Color emoji fallback — without it pipx/CLI emoji render as tofu boxes
+
 # --- Display Manager (greetd stack for --server phase 1) ---
 greetd                      # Minimal Wayland-native display manager (greeter-agnostic session harness)
 tuigreet                    # Terminal greeter; configured fallback when noctalia-greeter is unavailable

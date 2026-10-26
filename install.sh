@@ -20,6 +20,7 @@ INSTALL_SWAY=false
 INSTALL_ALACRITTY=false
 INSTALL_NVIM=false
 INSTALL_BTOP=false
+INSTALL_FASTFETCH=false
 INSTALL_WALLPAPER=false
 INSTALL_DOCKER_CONTAINERS=false
 SET_HOSTNAME=false
@@ -76,6 +77,7 @@ ${BOLD}Options:${NC}
   -T, --alacritty          Deploy Alacritty terminal configuration & Catppuccin Macchiato theme
   -N, --nvim               Deploy Neovim/LazyVim configuration & Catppuccin Macchiato theme
   -t, --btop               Deploy btop configuration & Catppuccin Macchiato theme
+  -F, --fastfetch          Deploy fastfetch configuration & Pendora Catppuccin Macchiato theme
   -H, --hostname           Set system hostname to 'pendora'
   -B, --wallpaper          Deploy and apply Pendora custom wallpaper
   -b, --basic              Basic pentest setup without Sway (00-60 DNF + pipx + upstreams + zsh + alacritty + nvim + wallpaper)
@@ -417,6 +419,13 @@ stow_module() {
                 local b_bak="$target_home/.config/btop.bak.$(date +%Y%m%d_%H%M%S)"
                 log_info "Existing non-symlink directory $target_home/.config/btop found. Backing up to $b_bak"
                 mv "$target_home/.config/btop" "$b_bak"
+            fi
+            ;;
+        fastfetch)
+            if [ -d "$target_home/.config/fastfetch" ] && [ ! -L "$target_home/.config/fastfetch" ]; then
+                local ff_bak="$target_home/.config/fastfetch.bak.$(date +%Y%m%d_%H%M%S)"
+                log_info "Existing non-symlink directory $target_home/.config/fastfetch found. Backing up to $ff_bak"
+                mv "$target_home/.config/fastfetch" "$ff_bak"
             fi
             ;;
     esac
@@ -868,6 +877,21 @@ deploy_btop_config() {
     stow_module "btop"
 }
 
+deploy_fastfetch_config() {
+    echo
+    echo -e "${BOLD}Deploying fastfetch Configuration (GNU Stow)${NC}"
+    echo "===================================================="
+    if ! command -v fastfetch &>/dev/null; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] sudo dnf install -y fastfetch"
+        else
+            log_info "fastfetch not found. Installing fastfetch via dnf..."
+            sudo dnf install -y fastfetch || true
+        fi
+    fi
+    stow_module "fastfetch"
+}
+
 deploy_wallpaper() {
     echo
     echo -e "${BOLD}Deploying Pendora Desktop Wallpaper & User Profile Logo${NC}"
@@ -1096,6 +1120,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_ALACRITTY=true
             INSTALL_NVIM=true
             INSTALL_BTOP=true
+            INSTALL_FASTFETCH=true
             INSTALL_WALLPAPER=true
             SET_HOSTNAME=true
             INSTALL_SWAY=false
@@ -1107,6 +1132,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_ZSH=true
             INSTALL_NVIM=true
             INSTALL_BTOP=true
+            INSTALL_FASTFETCH=true
             INSTALL_ALACRITTY=true
             SET_HOSTNAME=true
             shift
@@ -1118,6 +1144,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_ZSH=true
             INSTALL_NVIM=true
             INSTALL_BTOP=true
+            INSTALL_FASTFETCH=true
             INSTALL_ALACRITTY=true
             SET_HOSTNAME=true
             shift
@@ -1132,6 +1159,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -t|--btop)
             INSTALL_BTOP=true
+            shift
+            ;;
+        -F|--fastfetch)
+            INSTALL_FASTFETCH=true
             shift
             ;;
         -B|--wallpaper)
@@ -1155,6 +1186,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_ALACRITTY=true
             INSTALL_NVIM=true
             INSTALL_BTOP=true
+            INSTALL_FASTFETCH=true
             INSTALL_WALLPAPER=true
             SET_HOSTNAME=true
             shift
@@ -1368,6 +1400,11 @@ if [ "$INSTALL_BTOP" = true ]; then
     deploy_btop_config
 fi
 
+# Deploy fastfetch configuration if requested
+if [ "$INSTALL_FASTFETCH" = true ]; then
+    deploy_fastfetch_config
+fi
+
 # Run Docker containers section if requested
 if [ "$INSTALL_DOCKER_CONTAINERS" = true ]; then
     run_containers_install
@@ -1401,7 +1438,7 @@ if [ "$SERVER_MODE" = true ]; then
 fi
 
 # Do not prompt for reboot if only wallpaper & profile logo was deployed
-if [ "$INSTALL_WALLPAPER" = true ] && [ "$RUN_ALL" = false ] && [ "$RUN_BASIC" = false ] && [ "$RUN_PACKAGES" = false ] && [ "$INSTALL_PIPX" = false ] && [ "$INSTALL_UPSTREAMS" = false ] && [ "$INSTALL_ZSH" = false ] && [ "$INSTALL_SWAY" = false ] && [ "$INSTALL_ALACRITTY" = false ] && [ "$INSTALL_NVIM" = false ] && [ "$INSTALL_DOCKER_CONTAINERS" = false ] && [ "$SET_HOSTNAME" = false ]; then
+if [ "$INSTALL_WALLPAPER" = true ] && [ "$RUN_ALL" = false ] && [ "$RUN_BASIC" = false ] && [ "$RUN_PACKAGES" = false ] && [ "$INSTALL_PIPX" = false ] && [ "$INSTALL_UPSTREAMS" = false ] && [ "$INSTALL_ZSH" = false ] && [ "$INSTALL_SWAY" = false ] && [ "$INSTALL_ALACRITTY" = false ] && [ "$INSTALL_NVIM" = false ] && [ "$INSTALL_DOCKER_CONTAINERS" = false ] && [ "$INSTALL_FASTFETCH" = false ] && [ "$SET_HOSTNAME" = false ]; then
     REBOOT=false
 fi
 

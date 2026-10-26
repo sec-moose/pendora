@@ -25,6 +25,7 @@ cliphist                    # Wayland clipboard history manager
 
 # --- System Monitoring & Diagnostics ---
 btop                        # Modern resource monitor with graphical graphs
+fastfetch                   # System info summary tool (Pendora Catppuccin Macchiato config via -F/--fastfetch)
 htop                        # Interactive process viewer
 lsof                        # List open files and network sockets
 parted                      # Disk partition manipulation utility
