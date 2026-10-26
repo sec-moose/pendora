@@ -1,16 +1,18 @@
 // fastfetch configuration — Pendora (Catppuccin Macchiato)
-// Look & feel mirrors the rest of Pendora: Catppuccin Macchiato accents,
-// Kali-style box-drawing prompt (matches zsh/.zshrc configure_prompt).
+// Look & feel mirrors the rest of Pendora: a single Macchiato blue accent
+// (#8aadf4) for logo, title and keys; Kali-style box-drawing prompt
+// (matches zsh/.zshrc configure_prompt).
 // Requires fastfetch >= 2.42 (hex colors) — Fedora 41+ ships 2.x.
 // Schema: https://github.com/fastfetch-cli/fastfetch/wiki/Jsonc-Format
 {
   "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
 
-  // Pendora shield logo (assets/logo.svg), traced as ASCII.
-  // data-raw: printed as-is; inline truecolor SGR (Macchiato blue/lavender/sky).
+  // Pendora shield logo — community-pooled redesign (box-drawing outline,
+  // Fedora-style crossbar through the P stem). Single Macchiato blue accent.
+  // data-raw: printed as-is; inline truecolor SGR.
   "logo": {
     "type": "data-raw",
-    "source": "\u001b[38;2;138;173;244m ╭───────────╮\u001b[0m\n\u001b[38;2;138;173;244m │\u001b[0m           \u001b[38;2;138;173;244m│\u001b[0m\n\u001b[38;2;138;173;244m │\u001b[0m  \u001b[38;2;183;189;248m███████\u001b[0m  \u001b[38;2;138;173;244m│\u001b[0m\n\u001b[38;2;138;173;244m │\u001b[0m  \u001b[38;2;183;189;248m█     █\u001b[0m  \u001b[38;2;138;173;244m│\u001b[0m\n\u001b[38;2;138;173;244m │\u001b[0m  \u001b[38;2;183;189;248m█ \u001b[38;2;145;215;227m───\u001b[38;2;183;189;248m █\u001b[0m  \u001b[38;2;138;173;244m│\u001b[0m\n\u001b[38;2;138;173;244m │\u001b[0m  \u001b[38;2;183;189;248m█     █\u001b[0m  \u001b[38;2;138;173;244m│\u001b[0m\n\u001b[38;2;138;173;244m │\u001b[0m  \u001b[38;2;183;189;248m██████\u001b[0m   \u001b[38;2;138;173;244m│\u001b[0m\n\u001b[38;2;138;173;244m │\u001b[0m  \u001b[38;2;183;189;248m█\u001b[0m        \u001b[38;2;138;173;244m│\u001b[0m\n\u001b[38;2;138;173;244m │\u001b[0m  \u001b[38;2;183;189;248m█\u001b[0m        \u001b[38;2;138;173;244m│\u001b[0m\n\u001b[38;2;138;173;244m │\u001b[0m           \u001b[38;2;138;173;244m│\u001b[0m\n\u001b[38;2;138;173;244m ╰───────────╯\u001b[0m",
+    "source": "\u001b[38;2;138;173;244m╭───────────────╮\u001b[0m\n\u001b[38;2;138;173;244m│               │\u001b[0m\n\u001b[38;2;138;173;244m│     ████▄     │\u001b[0m\n\u001b[38;2;138;173;244m│     █   █     │\u001b[0m\n\u001b[38;2;138;173;244m│  ───█───█     │\u001b[0m\n\u001b[38;2;138;173;244m│     █   █     │\u001b[0m\n\u001b[38;2;138;173;244m ╲    ████▀    ╱\u001b[0m\n\u001b[38;2;138;173;244m  ╲   █       ╱\u001b[0m\n\u001b[38;2;138;173;244m   ╲  █      ╱\u001b[0m\n\u001b[38;2;138;173;244m    ╲       ╱\u001b[0m\n\u001b[38;2;138;173;244m     ╲     ╱\u001b[0m\n\u001b[38;2;138;173;244m       ╰─╯\u001b[0m",
     "padding": {
       "top": 1,
       "bottom": 1
@@ -18,30 +20,30 @@
   },
 
   "modules": [
-    // Kali-style greeting, mirrors zsh prompt ┌──(user㉿host)
+    // Kali-style greeting, mirrors zsh prompt ┌──(user@host).
+    // '@' instead of the prompt's ㉿: Hack Nerd Font has no U+324F glyph
+    // (renders as tofu without a CJK fallback font on Server minimal).
     {
       "type": "title",
-      "format": "{##c6a0f6}┌──({#}{##b7bdf8}{user-name}{#}{##a5adcb}㉿{#}{##8aadf4}{host-name}{#}{##c6a0f6}){#}"
+      "format": "{##8aadf4}┌──({user-name}@{host-name}){#}"
     },
-    { "type": "os",       "key": "│ OS",       "keyColor": "#c6a0f6" },
-    { "type": "host",     "key": "│ Host",     "keyColor": "#f5a97f" },
-    { "type": "kernel",   "key": "│ Kernel",   "keyColor": "#eed49f" },
-    { "type": "uptime",   "key": "│ Uptime",   "keyColor": "#a6da95" },
-    { "type": "packages", "key": "│ Packages", "keyColor": "#8bd5ca" },
-    { "type": "shell",    "key": "│ Shell",    "keyColor": "#91d7e3" },
-    { "type": "wm",       "key": "│ WM",       "keyColor": "#7dc4e4" },
+    { "type": "os",       "key": "│ OS",       "keyColor": "#8aadf4" },
+    { "type": "host",     "key": "│ Host",     "keyColor": "#8aadf4" },
+    { "type": "kernel",   "key": "│ Kernel",   "keyColor": "#8aadf4" },
+    { "type": "uptime",   "key": "│ Uptime",   "keyColor": "#8aadf4" },
+    { "type": "packages", "key": "│ Packages", "keyColor": "#8aadf4" },
+    { "type": "shell",    "key": "│ Shell",    "keyColor": "#8aadf4" },
+    { "type": "wm",       "key": "│ WM",       "keyColor": "#8aadf4" },
     { "type": "terminal", "key": "│ Terminal", "keyColor": "#8aadf4" },
-    { "type": "cpu",      "key": "│ CPU",      "keyColor": "#b7bdf8" },
-    { "type": "gpu",      "key": "│ GPU",      "keyColor": "#f0c6c6" },
-    { "type": "memory",   "key": "│ Memory",   "keyColor": "#ee99a0" },
-    { "type": "disk",     "key": "│ Disk",     "keyColor": "#ed8796", "folders": ["/"] },
-    { "type": "localip",  "key": "│ VPN/IP",   "keyColor": "#f4dbd6", "showIpv6": false, "showLoop": false },
+    { "type": "cpu",      "key": "│ CPU",      "keyColor": "#8aadf4" },
+    { "type": "gpu",      "key": "│ GPU",      "keyColor": "#8aadf4" },
+    { "type": "memory",   "key": "│ Memory",   "keyColor": "#8aadf4" },
+    { "type": "disk",     "key": "│ Disk",     "keyColor": "#8aadf4", "folders": ["/"] },
+    { "type": "localip",  "key": "│ VPN/IP",   "keyColor": "#8aadf4", "showIpv6": false, "showLoop": false },
     "break",
-    // Macchiato palette swatches
-    { "type": "colors", "paddingLeft": 2 },
     {
       "type": "custom",
-      "format": "{##c6a0f6}╰──────────────────────────╯{#}"
+      "format": "{##8aadf4}╰──────────────────────────╯{#}"
     }
   ]
 }
