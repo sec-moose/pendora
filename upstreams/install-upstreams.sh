@@ -50,6 +50,8 @@ ${BOLD}Available Upstream Tools:${NC}
   hack-font       Hack Nerd Font (TTF glyphs from official Nerd Fonts release)
   rustscan        RustScan modern 65k-port scanner (via GitHub release -> /usr/local/bin/rustscan)
   naabu           Naabu fast port scanner (via ProjectDiscovery -> /usr/local/bin/naabu)
+  linpeas         linPEAS Linux priv-esc scanner (via PEASS-ng release -> /usr/local/bin/linpeas)
+  winpeas         winPEAS Windows priv-esc binaries (via PEASS-ng release -> /usr/local/share/peass)
   portainer       Portainer Community Edition (management UI container on port 9443)
   sysreptor       SysReptor CE pentest reporting platform (via Docker Compose on port 8000)
   bloodhound      BloodHound Community Edition (via Docker Compose on port 8080)
@@ -767,6 +769,48 @@ install_naabu() {
     fi
 }
 
+install_linpeas() {
+    log_info "Installing linPEAS Linux privilege escalation scanner (PEASS-ng)..."
+    local dest="/usr/local/bin/linpeas"
+    local download_url="https://github.com/PEASS-ng/PEASS-ng/releases/download/20261027-87d1fe16/linpeas.sh"
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] curl -fsSL '$download_url' -o linpeas.sh"
+        echo "  [DRY-RUN] sudo install -m 755 linpeas.sh '$dest'"
+    else
+        local temp_dir
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
+        log_info "Downloading linpeas.sh release script..."
+        curl -fsSL "$download_url" -o "$temp_dir/linpeas.sh"
+        sudo install -m 755 "$temp_dir/linpeas.sh" "$dest"
+        rm -rf "$temp_dir"
+        trap - EXIT
+        log_success "linPEAS installed successfully to $dest (run on Linux targets)"
+    fi
+}
+
+install_winpeas() {
+    log_info "Installing winPEAS Windows privilege escalation binaries (PEASS-ng)..."
+    local dest_dir="/usr/local/share/peass"
+    local download_url="https://github.com/PEASS-ng/PEASS-ng/releases/download/20261027-87d1fe16/winPEASany.exe"
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] sudo mkdir -p '$dest_dir'"
+        echo "  [DRY-RUN] curl -fsSL '$download_url' -o winPEASany.exe"
+        echo "  [DRY-RUN] sudo install -m 644 winPEASany.exe '$dest_dir/winPEASany.exe'"
+    else
+        local temp_dir
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
+        sudo mkdir -p "$dest_dir"
+        log_info "Downloading winPEASany.exe release binary..."
+        curl -fsSL "$download_url" -o "$temp_dir/winPEASany.exe"
+        sudo install -m 644 "$temp_dir/winPEASany.exe" "$dest_dir/winPEASany.exe"
+        rm -rf "$temp_dir"
+        trap - EXIT
+        log_success "winPEAS installed successfully to $dest_dir/winPEASany.exe (transfer to Windows targets)"
+    fi
+}
+
 
 
 
@@ -806,7 +850,7 @@ if [[ " ${TOOLS[*]} " =~ " all " ]]; then
     # hack-font excluded from 'all' (audit M7): the Hack Nerd Font ships via the
     # official source-foundry-hack-fonts RPM in pkg-lists/00-base.list on every
     # profile; the explicit 'hack-font' target remains available opt-in.
-    TOOLS=("metasploit" "burpsuite" "seclists" "evil-winrm" "zap" "rustscan" "naabu" "portainer" "sysreptor" "bloodhound" "devtunnel" "responder")
+    TOOLS=("metasploit" "burpsuite" "seclists" "evil-winrm" "zap" "rustscan" "naabu" "linpeas" "winpeas" "portainer" "sysreptor" "bloodhound" "devtunnel" "responder")
 elif [[ " ${TOOLS[*]} " =~ " containers " ]] || [[ " ${TOOLS[*]} " =~ " docker " ]]; then
     TOOLS=("portainer" "sysreptor" "bloodhound")
 fi
@@ -846,6 +890,12 @@ for tool in "${TOOLS[@]}"; do
             ;;
         naabu)
             install_naabu || FAILED_TOOLS+=("naabu")
+            ;;
+        linpeas)
+            install_linpeas || FAILED_TOOLS+=("linpeas")
+            ;;
+        winpeas)
+            install_winpeas || FAILED_TOOLS+=("winpeas")
             ;;
         portainer)
             install_portainer || FAILED_TOOLS+=("portainer")

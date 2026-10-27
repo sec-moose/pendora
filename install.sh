@@ -33,13 +33,14 @@ REBOOT=true
 SELECTED_CATEGORIES=()
 CUSTOM_FILES=()
 
-# Colors for terminal output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-BOLD='\033[1m'
-NC='\033[0m'
+# Colors for terminal output ($'...' bakes real ESC bytes, so heredocs and
+# plain echo render them too — not just echo -e)
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+BLUE=$'\033[0;34m'
+YELLOW=$'\033[1;33m'
+BOLD=$'\033[1m'
+NC=$'\033[0m'
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $*"
@@ -166,6 +167,8 @@ list_categories() {
     echo "  - hack-font    (Hack Nerd Font for terminal and prompt iconography)"
     echo "  - rustscan     (RustScan ultra-fast 65k-port scanner binary in /usr/local/bin)"
     echo "  - naabu        (Naabu fast port scanner by ProjectDiscovery in /usr/local/bin)"
+    echo "  - linpeas      (PEASS-ng Linux priv-esc scanner in /usr/local/bin)"
+    echo "  - winpeas      (PEASS-ng Windows priv-esc binaries in /usr/local/share/peass)"
     echo "  - portainer    (Portainer Community Edition UI on port 9443)"
     echo "  - sysreptor    (SysReptor CE pentest reporting platform via Docker on port 8000)"
     echo "  - bloodhound   (BloodHound Community Edition on port 8080 - Portainer manageable)"

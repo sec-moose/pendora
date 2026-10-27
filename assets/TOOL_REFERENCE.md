@@ -96,6 +96,8 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **DevTunnel** | `devtunnel host -p 8000` | Secure port forwarding to expose local ports publicly |
 | **RustScan** | `rustscan -a <target>` | Modern 65k-port scanner binary in `/usr/local/bin` |
 | **Naabu** | `naabu -host <target>` | ProjectDiscovery port scanner in `/usr/local/bin` |
+| **linPEAS** | `linpeas -a` | Linux local privilege escalation scanner (PEASS-ng); run on target hosts |
+| **winPEAS** | `.\winPEASany.exe` *(on Windows target)* | Windows local privilege escalation scanner; binary staged in `/usr/local/share/peass` |
 
 ---
 
