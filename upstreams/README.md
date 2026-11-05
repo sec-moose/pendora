@@ -8,7 +8,7 @@ This directory contains deployment scripts and documentation for security tools,
 |---|---|---|---|
 | **Metasploit** | Rapid7 Omnibus Installer | CLI (`msfconsole`) | Industry standard penetration testing framework |
 | **Burp Suite** | PortSwigger Linux Installer | GUI (`burpsuite`) | Web application security testing and interception proxy |
-| **SecLists** | GitHub Git Clone | `/usr/share/wordlists/seclists` | Security tester's companion wordlists & dictionaries |
+| **SecLists** | GitHub Git Clone | `/usr/share/seclists` | Security tester's companion wordlists & dictionaries |
 | **Evil-WinRM** | RubyGem (`gem install`) | CLI (`evil-winrm`) | Ultimate WinRM shell for Windows penetration testing |
 | **OWASP ZAP** | Flathub Flatpak | GUI (`zap`) | Open source web application vulnerability scanner |
 | **Hack Nerd Font** | GitHub Release (`ryanoasis/nerd-fonts`) | System Fonts | Monospace font with full icons for terminal & prompt |

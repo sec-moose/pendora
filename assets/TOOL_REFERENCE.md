@@ -25,8 +25,8 @@ A quick-reference summary for every tool category, standalone suite, and contain
 
 | Tool | Common Command / Startup | Use Case |
 |---|---|---|
-| **FFUF** | `ffuf -u http://target/FUZZ -w /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt` | Fast web directory & parameter fuzzing |
-| **Gobuster** | `gobuster dir -u http://target -w /usr/share/wordlists/seclists/Discovery/Web-Content/raft-medium-directories.txt` | URI & directory brute-forcing |
+| **FFUF** | `ffuf -u http://target/FUZZ -w /usr/share/seclists/Discovery/Web-Content/common.txt` | Fast web directory & parameter fuzzing |
+| **Gobuster** | `gobuster dir -u http://target -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt` | URI & directory brute-forcing |
 | **WhatWeb** | `whatweb -a 3 http://target` | Web technology, server & CMS fingerprinting |
 | **HTTPie** | `http GET http://target/api/v1 Authorization:"Bearer token"` | Clean, colored terminal HTTP client |
 
@@ -36,9 +36,9 @@ A quick-reference summary for every tool category, standalone suite, and contain
 
 | Tool | Common Command / Startup | Use Case |
 |---|---|---|
-| **Hydra** | `hydra -l admin -P /usr/share/wordlists/seclists/Passwords/Leaked-Databases/rockyou.txt ssh://target` | Online network brute-force (SSH/FTP/HTTP) |
+| **Hydra** | `hydra -l admin -P /usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt ssh://target` | Online network brute-force (SSH/FTP/HTTP) |
 | **Medusa** | `medusa -h target -u admin -P wordlist.txt -M rdp` | Modular, parallel network login cracking |
-| **John the Ripper** | `john --wordlist=/usr/share/wordlists/seclists/Passwords/Leaked-Databases/rockyou.txt hashes.txt` | Offline password & shadow hash cracker |
+| **John the Ripper** | `john --wordlist=/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt hashes.txt` | Offline password & shadow hash cracker |
 | **Hashcat** | `hashcat -m 1000 -a 0 ntlm_hashes.txt rockyou.txt` | GPU-accelerated hash cracking (`-m 1000` = NTLM) |
 
 ---
@@ -92,7 +92,7 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **OWASP ZAP** | `zap` *(GUI via Flatpak)* | Zed Attack Proxy web vulnerability suite |
 | **Evil-WinRM** | `evil-winrm -i target_ip -u Administrator -p pass` | Windows Remote Management shell |
 | **Responder** | `sudo responder -I eth0 -dwv` | LLMNR / NBT-NS / mDNS poisoning & hash capture |
-| **SecLists** | `/usr/share/wordlists/seclists/` | Massive collection of wordlists, payloads, usernames |
+| **SecLists** | `/usr/share/seclists/` | Massive collection of wordlists, payloads, usernames |
 | **DevTunnel** | `devtunnel host -p 8000` | Secure port forwarding to expose local ports publicly |
 | **RustScan** | `rustscan -a <target>` | Modern 65k-port scanner binary in `/usr/local/bin` |
 | **Naabu** | `naabu -host <target>` | ProjectDiscovery port scanner in `/usr/local/bin` |

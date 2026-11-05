@@ -161,7 +161,7 @@ list_categories() {
     echo "----------------------------------------------------"
     echo "  - metasploit   (Rapid7 Omnibus Installer)"
     echo "  - burpsuite    (PortSwigger Linux Installer)"
-    echo "  - seclists     (GitHub git clone -> /usr/share/wordlists/seclists)"
+    echo "  - seclists     (GitHub git clone -> /usr/share/seclists)"
     echo "  - evil-winrm   (RubyGem)"
     echo "  - zap          (OWASP ZAP via Flatpak)"
     echo "  - hack-font    (Hack Nerd Font for terminal and prompt iconography)"

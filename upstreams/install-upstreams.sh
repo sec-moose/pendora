@@ -44,7 +44,7 @@ ${BOLD}Options:${NC}
 ${BOLD}Available Upstream Tools:${NC}
   metasploit      Metasploit Framework (via Rapid7 official omnibus installer)
   burpsuite       Burp Suite Community Edition (via PortSwigger Linux installer)
-  seclists        SecLists wordlist collection cloned to /usr/share/wordlists/seclists
+  seclists        SecLists wordlist collection cloned to /usr/share/seclists
   evil-winrm      Evil-WinRM Windows remote management shell (via gem)
   zap             Zed Attack Proxy (via Flathub Flatpak)
   hack-font       Hack Nerd Font (TTF glyphs from official Nerd Fonts release)
@@ -120,14 +120,19 @@ EOF
 }
 
 install_seclists() {
-    log_info "Installing SecLists to /usr/share/wordlists/seclists..."
-    local target_dir="/usr/share/wordlists/seclists"
+    local target_dir="/usr/share/seclists"
+    local legacy_dir="/usr/share/seclists"
+    log_info "Installing SecLists to $target_dir..."
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] sudo mkdir -p /usr/share/wordlists"
+        echo "  [DRY-RUN] [ -d $legacy_dir/.git ] && sudo mv $legacy_dir $target_dir"
         echo "  [DRY-RUN] sudo git clone --depth 1 https://github.com/danielmiessler/SecLists.git $target_dir"
         echo "  [DRY-RUN] sudo tar -xzf $target_dir/Passwords/Leaked-Databases/rockyou.txt.tar.gz -C $target_dir/Passwords/Leaked-Databases/"
     else
-        sudo mkdir -p /usr/share/wordlists
+        # Migrate legacy installs: keep the git clone (pull --ff-only still works)
+        if [ -d "$legacy_dir/.git" ] && [ ! -d "$target_dir" ]; then
+            log_info "Migrating SecLists from $legacy_dir to $target_dir..."
+            sudo mv "$legacy_dir" "$target_dir"
+        fi
         if [ -d "$target_dir/.git" ]; then
             log_info "SecLists already exists. Pulling latest updates..."
             sudo git -C "$target_dir" pull --ff-only
