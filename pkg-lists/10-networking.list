@@ -16,6 +16,8 @@ zmap                        # Fast single-packet network scanner for Internet au
 onesixtyone                 # Efficient SNMP scanner
 snmpcheck                   # SNMP reconnaissance tool for device enumeration
 nmbscan                     # NetBIOS network scanner
+samba-client                # Samba client tools (smbclient, rpcclient, nmblookup) — enum4linux-ng runtime deps
+samba-common-tools          # Samba common tools (net) — enum4linux-ng runtime deps
 p0f                         # Passive OS fingerprinting utility
 
 # --- DNS & Host Discovery ---

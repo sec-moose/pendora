@@ -19,11 +19,11 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
 
 - [ ] **Thorough Testing of Included Tools and Configurations**:
   - Comprehensive testing of native Fedora RPM binaries in `$PATH` (e.g. `nmap`, `tcpdump`, `wireshark`, `ffuf`, `hydra`, `john`).
-  - Functional validation of all 11 pipx offensive utilities (`netexec`, `impacket-*` symlinks, `/usr/local/bin/impacket` launcher, `certipy-ad`, `bloodhound-ce`, `sqlmap`).
+  - Functional validation of all 12 pipx offensive utilities (`netexec`, `impacket-*` symlinks, `/usr/local/bin/impacket` launcher, `certipy-ad`, `bloodhound-ce`, `enum4linux-ng`, `sqlmap`).
   - Operational testing of standalone upstream CLI wrappers and wordlists (`rustscan`, `naabu`, `devtunnel`, `responder`, `msfconsole`, `/usr/share/seclists`).
   - Validation of Sway desktop configuration, window manager hotkeys (`$mod+t`, `$mod+Shift+Arrows`), Noctalia bar widgets, SPICE host/guest clipboard bridge, and Neovim LazyVim plugin bootstrap.
 - [ ] **Automated Post-Install Verification Harness (`./install.sh --test` / `--verify`)**:
-  - Implement an automated health-check suite and CLI subcommand that verifies all RPM binaries, smoke-tests all 11 pipx offensive tools, validates `/usr/local/bin` wrappers, and checks HTTP health across the three local container ports (`127.0.0.1:9443`, `8000`, `8080`).
+  - Implement an automated health-check suite and CLI subcommand that verifies all RPM binaries, smoke-tests all 12 pipx offensive tools, validates `/usr/local/bin` wrappers, and checks HTTP health across the three local container ports (`127.0.0.1:9443`, `8000`, `8080`).
 ---
 
 ## 🛠️ Tooling & Upstream Additions
