@@ -41,8 +41,9 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
 - [ ] **Coercer**:
   - Automatic Active Directory machine account authentication coercion utility (`pipx` — PyPI package `coercer`).
   - Source: [https://github.com/p0dalirius/coercer](https://github.com/p0dalirius/coercer)
+- [x] **Go Toolchain**: Added `golang` to `pkg-lists/00-base.list` ("Runtimes, Compilers & Build Tools") — required by the `kerbrute` upstream installer (`go install` build).
 - [ ] **Language Toolchain Gaps**:
-  - Add Go toolchain (`golang`) to `pkg-lists/00-base.list` ("Runtimes, Compilers & Build Tools"); decide whether Java / Node.js are in scope for offensive tooling before adding.
+  - Decide whether Java / Node.js are in scope for offensive tooling before adding.
 - [ ] **Oh My Pi (omp)**:
   - Terminal AI coding agent with IDE tooling and shell integration.
   - Install via installer-script style in `upstreams/install-upstreams.sh` (precedent: SysReptor remote installer, devtunnel binary).

@@ -61,6 +61,7 @@ openssl-devel               # OpenSSL development headers (required for cryptogr
 libffi-devel                # Foreign Function Interface library headers (required for cffi)
 rust                        # Rust compiler (required for compiling modern cryptography & aardwolf wheels)
 cargo                       # Rust package manager and build tool
+golang                      # Go programming language toolchain (required to build the kerbrute upstream tool)
 pipx                        # Isolated Python application installer
 ruby                        # Ruby programming language runtime
 rubygems                    # Ruby package manager (for evil-winrm, etc.)

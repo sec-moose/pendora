@@ -50,6 +50,7 @@ ${BOLD}Available Upstream Tools:${NC}
   hack-font       Hack Nerd Font (TTF glyphs from official Nerd Fonts release)
   rustscan        RustScan modern 65k-port scanner (via GitHub release -> /usr/local/bin/rustscan)
   naabu           Naabu fast port scanner (via ProjectDiscovery -> /usr/local/bin/naabu)
+  kerbrute        Kerbrute AD username enumeration (via go install -> /usr/local/bin/kerbrute)
   linpeas         linPEAS Linux priv-esc scanner (via PEASS-ng release -> /usr/local/bin/linpeas)
   winpeas         winPEAS Windows priv-esc binaries (via PEASS-ng release -> /usr/local/share/peass)
   portainer       Portainer Community Edition (management UI container on port 9443)
@@ -823,6 +824,39 @@ install_winpeas() {
 
 
 
+install_kerbrute() {
+    log_info "Installing Kerbrute Kerberos username enumeration tool (Go build)..."
+    local dest="/usr/local/bin/kerbrute"
+    local module="github.com/ropnop/kerbrute@latest"
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] Ensure the Go toolchain (golang, pkg-lists/00-base.list): sudo dnf install -y golang"
+        echo "  [DRY-RUN] GOBIN=<mktemp dir> go install -ldflags '-s -w' $module"
+        echo "  [DRY-RUN] sudo install -m 755 <mktemp dir>/kerbrute '$dest'"
+    else
+        if ! command -v go &>/dev/null; then
+            if rpm -q golang &>/dev/null; then
+                log_error "The golang RPM is installed but 'go' is not on PATH."
+                return 1
+            fi
+            log_info "Installing the Go toolchain via dnf..."
+            sudo dnf install -y golang || { log_error "Failed to install golang. Install pkg-lists/00-base.list first, then re-run."; return 1; }
+        fi
+        local temp_dir
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
+        log_info "Building kerbrute from source via 'go install'..."
+        GOBIN="$temp_dir" GOPATH="${GOPATH:-$HOME/go}" go install -ldflags "-s -w" "$module"
+        if [ ! -x "$temp_dir/kerbrute" ]; then
+            log_error "'go install' did not produce a kerbrute binary."
+            return 1
+        fi
+        sudo install -m 755 "$temp_dir/kerbrute" "$dest"
+        rm -rf "$temp_dir"
+        trap - EXIT
+        log_success "Kerbrute installed successfully to $dest"
+    fi
+}
+
 # Parse options
 TOOLS=()
 while [[ $# -gt 0 ]]; do
@@ -855,7 +889,7 @@ if [[ " ${TOOLS[*]} " =~ " all " ]]; then
     # hack-font excluded from 'all' (audit M7): the Hack Nerd Font ships via the
     # official source-foundry-hack-fonts RPM in pkg-lists/00-base.list on every
     # profile; the explicit 'hack-font' target remains available opt-in.
-    TOOLS=("metasploit" "burpsuite" "seclists" "evil-winrm" "zap" "rustscan" "naabu" "linpeas" "winpeas" "portainer" "sysreptor" "bloodhound" "devtunnel" "responder")
+    TOOLS=("metasploit" "burpsuite" "seclists" "evil-winrm" "zap" "rustscan" "naabu" "kerbrute" "linpeas" "winpeas" "portainer" "sysreptor" "bloodhound" "devtunnel" "responder")
 elif [[ " ${TOOLS[*]} " =~ " containers " ]] || [[ " ${TOOLS[*]} " =~ " docker " ]]; then
     TOOLS=("portainer" "sysreptor" "bloodhound")
 fi
@@ -895,6 +929,9 @@ for tool in "${TOOLS[@]}"; do
             ;;
         naabu)
             install_naabu || FAILED_TOOLS+=("naabu")
+            ;;
+        kerbrute)
+            install_kerbrute || FAILED_TOOLS+=("kerbrute")
             ;;
         linpeas)
             install_linpeas || FAILED_TOOLS+=("linpeas")

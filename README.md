@@ -41,15 +41,15 @@ Pendora organizes tooling, services, and configuration into four dedicated tiers
 │ 1. Native DNF RPM │ 2. Pipx Isolated  │ 3. Containers  │ 4. Shell &    │
 │    (pkg-lists/)   │    (pipx-lists/)  │    & Upstreams │    Look-&-Feel│
 │                   │                   │   (upstreams/) │    (zsh/)     │
-│ 146 Fedora pkgs   │ 12 Python tools   │ Portainer:9443 │ Zsh setup     │
+│ 148 Fedora pkgs   │ 12 Python tools   │ Portainer:9443 │ Zsh setup     │
 │ Scanners, debug,  │ netexec, impacket │ SysReptor:8000 │ Completions   │
 │ compilers, sniff  │ mitmproxy, sqlmap │ BloodHound:8080│ Aliases, hl   │
 └───────────────────┴───────────────────┴────────────────┴───────────────┘
 ```
 
-1. **Native Fedora RPMs (`pkg-lists/`)**: 146 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, forensics, and the Sway desktop runtime.
+1. **Native Fedora RPMs (`pkg-lists/`)**: 148 packages verified directly against official Fedora repositories covering base compilers, networking, sniffers, web discovery, reversing, forensics, and the Sway desktop runtime.
 2. **Pipx Isolated Python Tools (`pipx-lists/`)**: Offensive Python utilities requiring isolated environments to prevent library conflicts with system Python (`netexec`, `impacket`, `certipy-ad`, `bloodhound-ce`, `enum4linux-ng`, `updog`, `sqlmap`, etc.).
-3. **Standalone Upstreams & Containers (`upstreams/`)**: Vendor installers, git clones, and Docker containers for enterprise suites (`metasploit`, `burpsuite`, `seclists`, `evil-winrm`, `zap`, `hack-font`, `rustscan`, `naabu`, `portainer`, `sysreptor`, `bloodhound`, `devtunnel`, `responder`).
+3. **Standalone Upstreams & Containers (`upstreams/`)**: Vendor installers, git clones, and Docker containers for enterprise suites (`metasploit`, `burpsuite`, `seclists`, `evil-winrm`, `zap`, `hack-font`, `rustscan`, `naabu`, `kerbrute`, `portainer`, `sysreptor`, `bloodhound`, `devtunnel`, `responder`).
 4. **Interactive Shell Environment (`zsh/`)**: Interactive Zsh configuration with autosuggestions, syntax highlighting, and pentesting aliases.
 
 > 📖 **Reference & Roadmap**: For common startup commands, usage examples, keybindings, and dashboard URLs for every tool, see the [Tool Reference Guide](assets/TOOL_REFERENCE.md). For common questions and answers, check the [Official FAQ](https://pendora.tech/#faq). To track upcoming features, tool additions, and planned upgrades, see [TODO.md](TODO.md).
@@ -156,7 +156,7 @@ The scripts and package templates in this project are designed, tested, and vali
    > The script handles `sudo` internally for tasks requiring root (DNF, hostname, Docker service). Running the entire script under `sudo` will incorrectly install user tools (`pipx`, `.zshrc`) into `/root/` instead of your user environment.
 
 3. **Installation Duration, Prompts & Network Downloads**:
-   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 146 RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
+   * **Attendance Required**: The full installation takes significant time to complete (typically 15–30 minutes depending on your hardware and network connection) as it installs 148 RPMs, builds Python wheels, downloads multi-gigabyte wordlists (SecLists), and pulls Docker container images.
    * **Sudo & Interactive Pauses**: Keep an eye on the terminal. The script periodically requests your `sudo` password for privileged operations and pauses to present generated credential cards (Portainer setup token, SysReptor credentials, BloodHound password) waiting for `[Enter]` to proceed.
    * **OWASP ZAP & Dev Tunnels Downloads**: During the upstream installations, downloading **OWASP ZAP** (Flatpak runtimes: `org.freedesktop.Platform`, GNOME runtime, codecs) and the standalone **Microsoft Dev Tunnels CLI** (`devtunnel`) binary takes time. The terminal may appear frozen or idle for several minutes while downloading these packages. **This is completely normal and has not hung during testing** — do not terminate the process; it will proceed automatically once the downloads finish.
 ---
@@ -180,7 +180,7 @@ pendora/
 ├── pipx-lists/                 # Isolated Python tool lists
 │   └── pipx-tools.list         # netexec (git), impacket, certipy-ad, bloodhound-ce, updog, etc.
 ├── upstreams/                  # Standalone third-party installers
-│   ├── install-upstreams.sh    # Metasploit, Burp, SecLists, Evil-WinRM, ZAP, Font, RustScan, Naabu, Portainer, SysReptor, BloodHound, Dev Tunnels, Responder
+│   ├── install-upstreams.sh    # Metasploit, Burp, SecLists, Evil-WinRM, ZAP, Font, RustScan, Naabu, Kerbrute, Portainer, SysReptor, BloodHound, Dev Tunnels, Responder
 │   └── README.md
 ├── alacritty/                  # Alacritty terminal & Catppuccin Macchiato theme
 │   └── .config/alacritty/      # alacritty.toml, catppuccin-macchiato.toml (Stow-compatible)

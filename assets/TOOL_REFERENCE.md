@@ -18,6 +18,7 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **Arp-scan** | `sudo arp-scan --localnet` | Identify alive hosts on local Ethernet/WiFi |
 | **Dnsenum** | `dnsenum --enum target.com` | Comprehensive DNS enumeration & subdomains |
 | **Hping3** | `sudo hping3 -S -p 80 -c 5 <target>` | Custom TCP/IP packet assembler and tester |
+| **FTP** | `ftp <target_ip>` *(interactive login, `ls`/`get`/`put`)* | Classic FTP client for enumerating & interacting with FTP services |
 
 ---
 
@@ -97,6 +98,7 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **DevTunnel** | `devtunnel host -p 8000` | Secure port forwarding to expose local ports publicly |
 | **RustScan** | `rustscan -a <target>` | Modern 65k-port scanner binary in `/usr/local/bin` |
 | **Naabu** | `naabu -host <target>` | ProjectDiscovery port scanner in `/usr/local/bin` |
+| **Kerbrute** | `kerbrute userenum --dc <dc_ip> -d <domain> /usr/share/seclists/Usernames/Names/names.txt` | Active Directory username enumeration via Kerberos pre-auth (built via `go install`) |
 | **linPEAS** | `linpeas -a` | Linux local privilege escalation scanner (PEASS-ng); run on target hosts |
 | **winPEAS** | `.\winPEASany.exe` *(on Windows target)* | Windows local privilege escalation scanner; binary staged in `/usr/local/share/peass` |
 

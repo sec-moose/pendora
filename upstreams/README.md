@@ -14,6 +14,7 @@ This directory contains deployment scripts and documentation for security tools,
 | **Hack Nerd Font** | GitHub Release (`ryanoasis/nerd-fonts`) | System Fonts | Monospace font with full icons for terminal & prompt |
 | **RustScan** | GitHub Release (`bee-san/RustScan`) | CLI (`/usr/local/bin/rustscan`) | Ultra-fast 65k-port scanner piped directly to Nmap |
 | **Naabu** | GitHub Release (`projectdiscovery/naabu`) | CLI (`/usr/local/bin/naabu`) | Fast TCP SYN/CONNECT port scanner (ProjectDiscovery) |
+| **Kerbrute** | Go Install (`go install github.com/ropnop/kerbrute@latest`) | CLI (`/usr/local/bin/kerbrute`) | Kerberos username enumeration & brute-forcing for Active Directory |
 | **linPEAS** | GitHub Release (`PEASS-ng/PEASS-ng`) | CLI (`/usr/local/bin/linpeas`) | Linux local privilege escalation & security assessment scanner |
 | **winPEAS** | GitHub Release (`PEASS-ng/PEASS-ng`) | Binaries (`/usr/local/share/peass`) | Windows local privilege escalation scanners (`winPEASany.exe`, transfer to targets) |
 | **Portainer CE** | Docker Container | `https://localhost:9443` | Container management web interface |

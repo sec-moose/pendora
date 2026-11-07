@@ -33,6 +33,9 @@ hping3                      # Custom TCP/IP packet assembler and analyzer
 traceroute                  # Print route packets trace to network host
 iperf3                      # Network bandwidth measurement tool
 
+# --- File Transfer Clients ---
+ftp                         # Classic FTP client for enumerating and interacting with FTP services
+
 # --- Packet Capture & Traffic Analysis ---
 wireshark                   # Interactive graphical network protocol analyzer
 wireshark-cli               # Command-line network protocol analyzer (tshark)
