@@ -73,7 +73,7 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | Tool | Command | Description |
 |---|---|---|
 | **NetExec (nxc)** | `nxc smb 192.168.1.0/24 -u user -p pass` | Modern Active Directory & network execution tool |
-| **Impacket** | `impacket <tool>` (e.g. `impacket secretsdump -h`)<br>`impacket-secretsdump domain/user:pass@target`<br>`secretsdump.py domain/user:pass@target` | Network protocol testing suite (70 tools: secretsdump, psexec, wmiexec, etc.) |
+| **Impacket** | `impacket <tool>` (e.g. `impacket secretsdump -h`)<br>`impacket-secretsdump domain/user:pass@target`<br>`sudo impacket-ntlmrelayx -tf targets.txt -smb2support` *(root-required tools resolve under sudo — launchers live in `/usr/local/bin`)* | Network protocol testing suite (70 tools: secretsdump, psexec, wmiexec, etc.) |
 | **Certipy** | `certipy find -vulnerable -u user@domain -p pass` | Active Directory Certificate Services (AD CS) auditing |
 | **enum4linux-ng** | `enum4linux-ng -A <target>` *(add `-u user -p pass` for authed enumeration)* | Windows/Samba enumeration with JSON/YAML export — pinned to Kali's v1.3.10; requires `samba-client` tools on PATH |
 | **SQLmap** | `sqlmap -u "http://target/page.php?id=1" --batch --dbs` | Automated SQL injection & database takeover |

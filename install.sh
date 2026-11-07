@@ -242,6 +242,7 @@ run_pipx_install() {
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] Create impacket-* convenience symlinks in ~/.local/bin (impacket- prefix only; stale bare aliases removed)"
         echo "  [DRY-RUN] Deploy central /usr/local/bin/impacket CLI launcher"
+        echo "  [DRY-RUN] Create sudo-transparent impacket-<tool> launchers in /usr/local/bin (symlinks -> /usr/local/bin/impacket)"
     else
         if [ -d "$pipx_bin_dir" ]; then
             log_info "Configuring Impacket convenience symlinks (impacket- prefix only) in $pipx_bin_dir..."
@@ -273,7 +274,8 @@ show_impacket_help() {
     echo -e "\033[1mImpacket Security Suite\033[0m - Network Protocol Testing Framework"
     echo "Usage: impacket <tool> [args...]"
     echo "       impacket-<tool> [args...]"
-    echo "       <tool>.py [args...]"
+    echo "       sudo impacket <tool> [args...]        # root-required tools (ntlmrelayx, smbserver, ...)"
+    echo "       sudo impacket-<tool> [args...]        # Kali-style; resolves under sudo"
     echo
     echo -e "\033[1mCommon Tools:\033[0m"
     printf "  %-22s %s\n" "secretsdump" "Dump SAM hashes, LSA secrets, and NTDS.dit"
@@ -292,19 +294,37 @@ show_impacket_help() {
     echo "Run 'impacket <tool> -h' for tool-specific help (e.g. impacket secretsdump -h)"
 }
 
-if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    show_impacket_help
-    exit 0
+# Tool name: from argv0 when invoked via an impacket-<tool> launcher symlink, else the first argument
+SELF_NAME="${0##*/}"
+if [[ "$SELF_NAME" == impacket-* ]]; then
+    TOOL="${SELF_NAME#impacket-}"
+else
+    if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+        show_impacket_help
+        exit 0
+    fi
+    TOOL="$1"
+    shift
 fi
 
-TOOL="$1"
-shift
+# Candidate bin dirs: the invoking user first, then the real sudo invoker's pipx dir
+# (under 'sudo' HOME=/root, while Pendora's pipx tools live in the standard user's
+# ~/.local/bin, which root's secure_path never searches), then every /home/*/.local/bin.
+CANDIDATE_DIRS=( "$HOME/.local/bin" )
+if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    SU_HOME="$(getent passwd "${SUDO_USER}" 2>/dev/null | cut -d: -f6)"
+    [ -n "$SU_HOME" ] && CANDIDATE_DIRS+=( "$SU_HOME/.local/bin" )
+fi
+for D in /home/*/.local/bin; do
+    [ -d "$D" ] && CANDIDATE_DIRS+=( "$D" )
+done
 
-# Check candidate paths
-for CANDIDATE in "$HOME/.local/bin/${TOOL}.py" "$HOME/.local/bin/${TOOL}" "/usr/local/bin/${TOOL}.py" "${TOOL}.py" "${TOOL}"; do
-    if command -v "$CANDIDATE" &>/dev/null; then
-        exec "$CANDIDATE" "$@"
-    fi
+for CANDIDATE in "${TOOL}.py" "${TOOL}"; do
+    for DIR in "${CANDIDATE_DIRS[@]}"; do
+        if [ -x "$DIR/$CANDIDATE" ]; then
+            exec "$DIR/$CANDIDATE" "$@"
+        fi
+    done
 done
 
 echo "Error: Impacket tool '${TOOL}' not found." >&2
@@ -312,6 +332,20 @@ echo "Run 'impacket --help' to view available tools." >&2
 exit 1
 EOF
         sudo chmod +x /usr/local/bin/impacket
+
+        # Sudo-transparent dashed launchers: root's secure_path includes /usr/local/bin
+        # but never ~/.local/bin, so 'sudo impacket-<tool>' resolves here and the runner
+        # locates the tool in the standard user's pipx dir (Kali muscle memory, e.g.
+        # sudo impacket-ntlmrelayx -tf targets.txt -smb2support)
+        if [ -d "$pipx_bin_dir" ]; then
+            log_info "Deploying sudo-transparent impacket-<tool> launchers to /usr/local/bin..."
+            for script in "$pipx_bin_dir"/*.py; do
+                [ -f "$script" ] || continue
+                local base_name
+                base_name="$(basename "$script" .py)"
+                sudo ln -sf impacket "/usr/local/bin/impacket-${base_name}"
+            done
+        fi
         log_success "Impacket launcher and symlinks configured."
     fi
 }
