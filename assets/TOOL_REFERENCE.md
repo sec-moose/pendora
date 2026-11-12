@@ -19,6 +19,7 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **Dnsenum** | `dnsenum --enum target.com` | Comprehensive DNS enumeration & subdomains |
 | **Hping3** | `sudo hping3 -S -p 80 -c 5 <target>` | Custom TCP/IP packet assembler and tester |
 | **FTP** | `ftp <target_ip>` *(interactive login, `ls`/`get`/`put`)* | Classic FTP client for enumerating & interacting with FTP services |
+| **xfreerdp** | `xfreerdp /u:admin /p:'Password1' /v:<target_ip> /cert-ignore +dynamic-resolution` | FreeRDP client — RDP remote desktop to Windows hosts & lateral movement |
 
 ---
 

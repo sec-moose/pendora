@@ -36,6 +36,9 @@ iperf3                      # Network bandwidth measurement tool
 # --- File Transfer Clients ---
 ftp                         # Classic FTP client for enumerating and interacting with FTP services
 
+# --- Remote Access Clients ---
+freerdp                     # FreeRDP RDP clients (xfreerdp, wlfreerdp) for Windows remote desktop & lateral movement
+
 # --- Packet Capture & Traffic Analysis ---
 wireshark                   # Interactive graphical network protocol analyzer
 wireshark-cli               # Command-line network protocol analyzer (tshark)

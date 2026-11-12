@@ -158,9 +158,9 @@ install_evil_winrm() {
             return 1
         fi
         # Ensure ruby.h and readline headers are installed for compiling readline-ext native gem
-        if ! rpm -q ruby-devel readline-devel &>/dev/null; then
-            log_info "Installing missing ruby-devel and readline-devel for native gem compilation..."
-            sudo dnf install -y ruby-devel readline-devel
+        if ! rpm -q ruby-devel readline-devel redhat-rpm-config &>/dev/null; then
+            log_info "Installing missing ruby-devel, readline-devel, and redhat-rpm-config for native gem compilation..."
+            sudo dnf install -y ruby-devel readline-devel redhat-rpm-config
         fi
         sudo gem install evil-winrm
         log_success "Evil-WinRM installed."

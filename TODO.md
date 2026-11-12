@@ -24,6 +24,11 @@ Tracking upcoming features, tool expansions, bugfixes, and environment enhanceme
   - Validation of Sway desktop configuration, window manager hotkeys (`$mod+t`, `$mod+Shift+Arrows`), Noctalia bar widgets, SPICE host/guest clipboard bridge, and Neovim LazyVim plugin bootstrap.
 - [ ] **Automated Post-Install Verification Harness (`./install.sh --test` / `--verify`)**:
   - Implement an automated health-check suite and CLI subcommand that verifies all RPM binaries, smoke-tests all 12 pipx offensive tools, validates `/usr/local/bin` wrappers, and checks HTTP health across the three local container ports (`127.0.0.1:9443`, `8000`, `8080`).
+- [x] **Live-VM Validation of evil-winrm / `redhat-rpm-config` Fix** *(investigated 2026-11-09, container-verified; live-VM validated 2026-11-12)*:
+  - Root cause (reproduced in a throwaway `fedora:44` podman container): Fedora's ruby embeds `-specs=/usr/lib/rpm/redhat/...` hardened-build flags in rbconfig; without `redhat-rpm-config` every native gem build fails (`cannot read spec file 'redhat-hardened-cc1'`), so `gem install evil-winrm` (readline-ext extconf) died on minimal/server bases — toolchain itself (gcc/make/ruby-devel) was healthy.
+  - Fix applied & verified in-container: `redhat-rpm-config` added to `pkg-lists/00-base.list`; remediation guard in `upstreams/install-upstreams.sh` extended to check/install it. With it present: `Successfully installed evil-winrm-4.1` (13 gems), `evil-winrm -h` works.
+  - Validated live (2026-11-12): fresh Fedora Server VM, `--server` → `--all` from the working tree — `redhat-rpm-config` present, `evil-winrm -h` clean, `xfreerdp --version` and `kerbrute -h` verified post-install.
+  - `fedora:44` image (191 MB) intentionally kept in the local podman cache for cheap re-testing (`podman run --rm fedora:44 ...`).
 ---
 
 ## 🛠️ Tooling & Upstream Additions

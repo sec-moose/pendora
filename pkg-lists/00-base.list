@@ -67,6 +67,7 @@ ruby                        # Ruby programming language runtime
 rubygems                    # Ruby package manager (for evil-winrm, etc.)
 ruby-devel                  # Ruby development headers (provides ruby.h for native gem compilation)
 readline-devel              # GNU Readline library headers (required by readline-ext gem)
+redhat-rpm-config           # GCC hardened-build spec files (rbconfig -specs= paths; without it every native gem build fails)
 
 # --- Cryptography & Low-level Utilities ---
 openssl                     # TLS/SSL cryptography toolkit (needed for SysReptor)
