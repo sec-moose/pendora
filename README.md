@@ -211,6 +211,8 @@ pendora/
 > ▶️ **After a reboot**, start SysReptor with `cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d` and BloodHound with `cd /opt/bloodhound && sudo docker compose up -d` (or via Portainer). BloodHound needs ~8 GB RAM (exit 137 = OOM).
 > 🔑 **SysReptor password reset**: `cd /opt/sysreptor/sysreptor/deploy && sudo docker compose exec app python3 manage.py changepassword reptor`
 
+> ⚠️ **Security note**: the credential files above (`/opt/portainer/admin_setup.txt`, `/opt/sysreptor/admin_credentials.txt`, `/opt/bloodhound/admin_credentials.txt`) are **plaintext bootstrap records**. Copy the credentials into a password manager on first login, then delete the files: `sudo rm -f /opt/portainer/admin_setup.txt /opt/sysreptor/admin_credentials.txt /opt/bloodhound/admin_credentials.txt`
+
 *(For full credentials, startup commands, and terminal workflows across all categories, see the [Tool Reference Guide](assets/TOOL_REFERENCE.md)).*
 > ℹ️ **Third-Party Script Notice**: The SysReptor deployment pulls and executes the vendor's official installer from [`https://docs.sysreptor.com/install.sh`](https://docs.sysreptor.com/install.sh). Users should always review third-party scripts before running them.
 

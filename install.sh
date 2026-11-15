@@ -306,18 +306,21 @@ else
     TOOL="$1"
     shift
 fi
+# SEC-01: strictly validate TOOL to block path traversal (e.g. 'sudo impacket ../../bin/bash')
+if [[ ! "$TOOL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: Invalid tool name '${TOOL}'." >&2
+    exit 1
+fi
 
 # Candidate bin dirs: the invoking user first, then the real sudo invoker's pipx dir
 # (under 'sudo' HOME=/root, while Pendora's pipx tools live in the standard user's
-# ~/.local/bin, which root's secure_path never searches), then every /home/*/.local/bin.
+# ~/.local/bin, which root's secure_path never searches).
+# SEC-01: never glob /home/* — only the invoking user and SUDO_USER are searched.
 CANDIDATE_DIRS=( "$HOME/.local/bin" )
 if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
     SU_HOME="$(getent passwd "${SUDO_USER}" 2>/dev/null | cut -d: -f6)"
     [ -n "$SU_HOME" ] && CANDIDATE_DIRS+=( "$SU_HOME/.local/bin" )
 fi
-for D in /home/*/.local/bin; do
-    [ -d "$D" ] && CANDIDATE_DIRS+=( "$D" )
-done
 
 for CANDIDATE in "${TOOL}.py" "${TOOL}"; do
     for DIR in "${CANDIDATE_DIRS[@]}"; do
@@ -337,14 +340,19 @@ EOF
         # but never ~/.local/bin, so 'sudo impacket-<tool>' resolves here and the runner
         # locates the tool in the standard user's pipx dir (Kali muscle memory, e.g.
         # sudo impacket-ntlmrelayx -tf targets.txt -smb2support)
-        if [ -d "$pipx_bin_dir" ]; then
+        # SEC-01: enumerate only the impacket pipx venv's own bin dir, never the
+        # shared ~/.local/bin (which may hold other tools' *.py scripts).
+        impacket_venv_bin="${target_home}/.local/share/pipx/venvs/impacket/bin"
+        if [ -d "$impacket_venv_bin" ]; then
             log_info "Deploying sudo-transparent impacket-<tool> launchers to /usr/local/bin..."
-            for script in "$pipx_bin_dir"/*.py; do
+            for script in "$impacket_venv_bin"/*.py; do
                 [ -f "$script" ] || continue
                 local base_name
                 base_name="$(basename "$script" .py)"
                 sudo ln -sf impacket "/usr/local/bin/impacket-${base_name}"
             done
+        else
+            log_info "Impacket pipx venv not found at $impacket_venv_bin; skipping impacket-* launcher symlinks."
         fi
         log_success "Impacket launcher and symlinks configured."
     fi
@@ -416,7 +424,7 @@ stow_module() {
     log_info "Applying ${BOLD}${module}${NC} dotfiles via GNU Stow into $target_home..."
     mkdir -p "$target_home/.config"
     if [ -n "${SUDO_USER:-}" ] && [ "$EUID" -eq 0 ]; then
-        chown "${target_user}:$(id -gn "$target_user")" "$target_home/.config"
+        chown -h "${target_user}:$(id -gn "$target_user")" "$target_home/.config"
     fi
 
     # Back up existing non-symlink targets to prevent Stow conflicts
@@ -853,7 +861,7 @@ deploy_sway_config() {
         fi
         mkdir -p "${target_home}/.config/systemd/user"
         if [ -n "${SUDO_USER:-}" ]; then
-            chown "${target_user}:${target_user}" "${target_home}/.config/systemd/user"
+            chown -h "${target_user}:${target_user}" "${target_home}/.config/systemd/user"
         fi
     fi
     stow_module "sway"

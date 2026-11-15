@@ -400,6 +400,8 @@ install_portainer() {
         done
         [ -z "$setup_token" ] && setup_token="Check 'sudo docker logs portainer' for setup_token"
 
+        # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+        sudo install -m 600 /dev/null "$creds_file" 2>/dev/null || true
         sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the Setup Token above is still valid."
 Web URL:      https://localhost:9443
 Username:     admin
@@ -418,6 +420,8 @@ EOF
         echo -e "  Saved to:     ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: Complete the initial admin setup in the web UI within 5 minutes - the Setup Token above expires after that!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
+        # SEC-08: remind the user that the credentials card is a plaintext bootstrap record
+        log_info "${creds_file} is a plaintext bootstrap record: move this token into a password manager and delete the file afterwards (sudo rm ${creds_file})."
         echo
         if [ "$ASSUME_YES" = false ]; then
             read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _ || true
@@ -474,6 +478,8 @@ install_sysreptor() {
             log_info "Running SysReptor installer in unattended mode (Community Edition)..."
 
             local installer_rc=0
+            # SEC-11: pre-create with restrictive mode so the installer log never appears world-readable
+            sudo install -m 600 /dev/null "${install_dir}/admin_install.log" 2>/dev/null || true
             (
                 cd "$install_dir"
                 sudo env \
@@ -500,6 +506,10 @@ install_sysreptor() {
             /opt/sysreptor/sysreptor/deploy/docker-compose.yml \
             /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml \
             /opt/sysreptor/sysreptor/deploy/languagetool/docker-compose.yml 2>/dev/null || true
+        # SEC-05: bind the caddy ports to loopback so SysReptor is not exposed on all interfaces
+        sudo sed -i 's|[[:space:]]*- 8000:8000|      - 127.0.0.1:8000:8000|g; s|[[:space:]]*- "8000:8000"|      - "127.0.0.1:8000:8000"|g; s|[[:space:]]*- 8443:8443|      - 127.0.0.1:8443:8443|g; s|[[:space:]]*- "8443:8443"|      - "127.0.0.1:8443:8443"|g' \
+            /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml 2>/dev/null || true
+        sudo grep -q '127.0.0.1:8000:8000' /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml 2>/dev/null || log_error 'SysReptor port 8000 is NOT bound to loopback'
         sudo docker update --restart=no $(cd /opt/sysreptor/sysreptor/deploy 2>/dev/null && sudo docker compose ps -q 2>/dev/null) 2>/dev/null || true
 
         # Reset the reptor password to a fresh generated value so the banner always shows working
@@ -517,6 +527,8 @@ install_sysreptor() {
             sleep 3
         done
         if [ "$reset_ok" = true ]; then
+            # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+            sudo install -m 600 /dev/null "$creds_file" 2>/dev/null || true
             printf 'Web URL:   http://localhost:8000\nUsername:  reptor\nPassword:  %s\n' "${new_pw}" | sudo tee "$creds_file" >/dev/null || log_warn "Could not write $creds_file."
             sudo chmod 600 "$creds_file" 2>/dev/null || true
         else
@@ -534,6 +546,8 @@ install_sysreptor() {
         echo -e "  Saved to:  ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: Please change this password on first login!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
+        # SEC-08: remind the user that the credentials card is a plaintext bootstrap record
+        log_info "${creds_file} is a plaintext bootstrap record: move these credentials into a password manager and delete the file afterwards (sudo rm ${creds_file})."
         echo
         if [ "$ASSUME_YES" = false ]; then
             read -rp "Please copy your username and password above. Press [Enter] to continue: " _ || true
@@ -575,6 +589,8 @@ install_bloodhound() {
         local initial_pw
         initial_pw="$(openssl rand -base64 20 | tr -d '\r\n=')"
         log_info "Writing bloodhound.config.json + .env (admin password is reset to a fresh value on every run)..."
+        # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+        sudo install -m 600 /dev/null "$install_dir/bloodhound.config.json" 2>/dev/null || true
         sudo tee "$install_dir/bloodhound.config.json" >/dev/null <<EOF || { log_error "Could not write $install_dir/bloodhound.config.json."; return 0; }
 {
   "version": 1,
@@ -600,12 +616,16 @@ install_bloodhound() {
   }
 }
 EOF
+        # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+        sudo install -m 600 /dev/null "$install_dir/.env" 2>/dev/null || true
         printf 'bhe_recreate_default_admin=true\n' | sudo tee "$install_dir/.env" >/dev/null || { log_error "Could not write $install_dir/.env."; return 0; }
         sudo chmod 600 "$install_dir/bloodhound.config.json" "$install_dir/.env" 2>/dev/null || true
         sudo chmod 755 "$install_dir" 2>/dev/null || true
 
         # Restrict port binding to localhost loopback in docker-compose.yml
         sudo sed -i 's|[[:space:]]*- 8080:8080|      - 127.0.0.1:8080:8080|g; s|[[:space:]]*- "8080:8080"|      - "127.0.0.1:8080:8080"|g' "$install_dir/docker-compose.yml" 2>/dev/null || true
+        # SEC-04b: verify the port rewrite took effect (non-fatal, matches the config-mount check below)
+        sudo grep -q '127.0.0.1:8080:8080' "$install_dir/docker-compose.yml" || log_error 'BloodHound port 8080 is NOT bound to loopback'
 
         # Enable the commented-out config mount in the compose file (idempotent)
         sudo sed -i 's|^    # volumes:$|    volumes:|; s|^    #   - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$|      - ./bloodhound.config.json:/bloodhound.config.json:ro|' "$install_dir/docker-compose.yml"
@@ -655,6 +675,8 @@ EOF
         local parsed_pw="$initial_pw"
 
         # Save credentials to /opt/bloodhound/admin_credentials.txt
+        # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+        sudo install -m 600 /dev/null "$creds_file" 2>/dev/null || true
         sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the credentials above are still valid."
 Web URL:   http://localhost:8080
 Username:  ${parsed_user}
@@ -672,6 +694,8 @@ EOF
         echo -e "  Saved to:  ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: You must change this password on first login!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
+        # SEC-08: remind the user that the credentials card is a plaintext bootstrap record
+        log_info "${creds_file} is a plaintext bootstrap record: move these credentials into a password manager and delete the file afterwards (sudo rm ${creds_file})."
         echo
         if [ "$ASSUME_YES" = false ]; then
             read -rp "Please copy your username and password above. Press [Enter] to continue: " _ || true

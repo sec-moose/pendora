@@ -1,0 +1,7 @@
+# SEC-15: ignore local build artifacts and editor/OS cruft
+*.bak.*
+__pycache__/
+*.pyc
+.venv/
+*.log
+.DS_Store

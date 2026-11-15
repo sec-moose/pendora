@@ -113,6 +113,8 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **SysReptor** | `8000` (HTTP) | `http://localhost:8000` | User: `reptor`<br>Password in `/opt/sysreptor/admin_credentials.txt` |
 | **BloodHound CE** | `8080` (HTTP) | `http://localhost:8080` | User: `admin`<br>Password in `/opt/bloodhound/admin_credentials.txt` |
 
+> ⚠️ **Security note**: those credential files are plaintext bootstrap records — save the credentials in a password manager on first login, then delete them (`sudo rm -f /opt/portainer/admin_setup.txt /opt/sysreptor/admin_credentials.txt /opt/bloodhound/admin_credentials.txt`).
+
 * **Manage all containers via Docker**:
   ```bash
   docker ps                                                          # View running containers
