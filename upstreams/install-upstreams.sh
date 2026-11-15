@@ -506,10 +506,24 @@ install_sysreptor() {
             /opt/sysreptor/sysreptor/deploy/docker-compose.yml \
             /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml \
             /opt/sysreptor/sysreptor/deploy/languagetool/docker-compose.yml 2>/dev/null || true
-        # SEC-05: bind the caddy ports to loopback so SysReptor is not exposed on all interfaces
-        sudo sed -i 's|[[:space:]]*- 8000:8000|      - 127.0.0.1:8000:8000|g; s|[[:space:]]*- "8000:8000"|      - "127.0.0.1:8000:8000"|g; s|[[:space:]]*- 8443:8443|      - 127.0.0.1:8443:8443|g; s|[[:space:]]*- "8443:8443"|      - "127.0.0.1:8443:8443"|g' \
-            /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml 2>/dev/null || true
-        sudo grep -q '127.0.0.1:8000:8000' /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml 2>/dev/null || log_error 'SysReptor port 8000 is NOT bound to loopback'
+        # SEC-05: pin the published port to loopback. The vendor layout publishes via the app
+        # service as ${BIND_PORT:-127.0.0.1:8000:8000} in sysreptor/docker-compose.yml (caddy is
+        # only used for FQDN/TLS deployments and is not enabled here). The vendor default is
+        # already loopback - pin it in deploy/.env so a future default change cannot silently
+        # expose the reporting UI.
+        local sr_env="/opt/sysreptor/sysreptor/deploy/.env"
+        if ! sudo grep -q '^BIND_PORT=' "$sr_env" 2>/dev/null; then
+            echo 'BIND_PORT="127.0.0.1:8000:8000"' | sudo tee -a "$sr_env" >/dev/null 2>&1 || true
+        fi
+        # Effective check: complain only if a SysReptor container is actually published on all
+        # interfaces (recreate once to apply the pin if so); a stopped stack is not an error.
+        if sudo docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -Ei 'sysreptor' | grep -qE '0\.0\.0\.0:8000|\[::\]:8000'; then
+            log_info "SysReptor port 8000 is published on all interfaces - recreating the stack to apply the loopback binding..."
+            (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d 2>/dev/null) || true
+        fi
+        if sudo docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -Ei 'sysreptor' | grep -qE '0\.0\.0\.0:8000|\[::\]:8000'; then
+            log_error 'SysReptor port 8000 is STILL published on all interfaces (check: sudo docker ps --format "{{.Names}} {{.Ports}}")'
+        fi
         sudo docker update --restart=no $(cd /opt/sysreptor/sysreptor/deploy 2>/dev/null && sudo docker compose ps -q 2>/dev/null) 2>/dev/null || true
 
         # Reset the reptor password to a fresh generated value so the banner always shows working
@@ -622,10 +636,13 @@ EOF
         sudo chmod 600 "$install_dir/bloodhound.config.json" "$install_dir/.env" 2>/dev/null || true
         sudo chmod 755 "$install_dir" 2>/dev/null || true
 
-        # Restrict port binding to localhost loopback in docker-compose.yml
-        sudo sed -i 's|[[:space:]]*- 8080:8080|      - 127.0.0.1:8080:8080|g; s|[[:space:]]*- "8080:8080"|      - "127.0.0.1:8080:8080"|g' "$install_dir/docker-compose.yml" 2>/dev/null || true
-        # SEC-04b: verify the port rewrite took effect (non-fatal, matches the config-mount check below)
-        sudo grep -q '127.0.0.1:8080:8080' "$install_dir/docker-compose.yml" || log_error 'BloodHound port 8080 is NOT bound to loopback'
+        # SEC-04b: pin the published port to loopback. Upstream changed the compose to
+        # ${BLOODHOUND_HOST:-127.0.0.1}:${BLOODHOUND_PORT:-8080}:8080 - the old literal
+        # '8080:8080' no longer exists, so a literal sed is a silent no-op. Pin
+        # BLOODHOUND_HOST explicitly in .env (the --force-recreate below applies it).
+        if ! sudo grep -q '^BLOODHOUND_HOST=' "$install_dir/.env" 2>/dev/null; then
+            echo 'BLOODHOUND_HOST=127.0.0.1' | sudo tee -a "$install_dir/.env" >/dev/null 2>&1 || true
+        fi
 
         # Enable the commented-out config mount in the compose file (idempotent)
         sudo sed -i 's|^    # volumes:$|    volumes:|; s|^    #   - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$|      - ./bloodhound.config.json:/bloodhound.config.json:ro|' "$install_dir/docker-compose.yml"
@@ -650,6 +667,12 @@ EOF
         if [ "$compose_rc" -ne 0 ]; then
             log_error "BloodHound CE deployment failed after 3 attempts (image pull network error). Check connectivity and re-run 'pendora containers', or deploy manually: cd $install_dir && sudo docker compose up -d --force-recreate"
             return 0
+        fi
+
+        # SEC-04b: effective check - fail loudly only if BloodHound is actually published on
+        # all interfaces (the pin above plus --force-recreate should make this impossible)
+        if sudo docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -i 'bloodhound' | grep -qE '0\.0\.0\.0:8080|\[::\]:8080'; then
+            log_error 'BloodHound port 8080 is published on ALL interfaces (check: sudo docker ps --format "{{.Names}} {{.Ports}}")'
         fi
 
         # Wait for the UI to answer (initial graph analysis can take ~1 minute; exit 137 = out of memory)
