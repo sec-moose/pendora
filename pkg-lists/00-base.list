@@ -25,6 +25,7 @@ cliphist                    # Wayland clipboard history manager
 
 # --- System Monitoring & Diagnostics ---
 btop                        # Modern resource monitor with graphical graphs
+fastfetch                   # System info summary tool (Pendora Catppuccin Macchiato config via -F/--fastfetch)
 htop                        # Interactive process viewer
 lsof                        # List open files and network sockets
 parted                      # Disk partition manipulation utility
@@ -60,12 +61,24 @@ openssl-devel               # OpenSSL development headers (required for cryptogr
 libffi-devel                # Foreign Function Interface library headers (required for cffi)
 rust                        # Rust compiler (required for compiling modern cryptography & aardwolf wheels)
 cargo                       # Rust package manager and build tool
+golang                      # Go programming language toolchain (required to build the kerbrute upstream tool)
 pipx                        # Isolated Python application installer
 ruby                        # Ruby programming language runtime
 rubygems                    # Ruby package manager (for evil-winrm, etc.)
 ruby-devel                  # Ruby development headers (provides ruby.h for native gem compilation)
 readline-devel              # GNU Readline library headers (required by readline-ext gem)
+redhat-rpm-config           # GCC hardened-build spec files (rbconfig -specs= paths; without it every native gem build fails)
 
 # --- Cryptography & Low-level Utilities ---
 openssl                     # TLS/SSL cryptography toolkit (needed for SysReptor)
 util-linux                  # Core Linux utilities (provides uuidgen for SysReptor)
+
+# --- Fonts ---
+# Hack Nerd Font is not a Fedora package — ensure_hack_nerd_font() in install.sh
+# fetches it from the official Nerd Fonts release (same as the main branch).
+
+# --- XDG User Directories ---
+xdg-user-dirs               # Creates standard user folders (Downloads, Documents, Pictures, ...) — Server minimal ships a bare /home/USER
+
+# --- Boot Splash ---
+plymouth-theme-spinner       # Plymouth spinner theme — set as the default splash by --server provisioning

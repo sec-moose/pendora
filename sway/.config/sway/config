@@ -11,9 +11,11 @@ exec systemctl --user start sway-session.target
 exec /usr/libexec/xdg-desktop-portal-wlr -r
 exec sleep 1 && /usr/libexec/xdg-desktop-portal-gtk
 
-#-----------------
-#---- MONITOR ----
-#-----------------
+# Resolution pinned to 1920x1080 as the Pendora VM standard. Live resize
+# still does NOT propagate: without virtio-gpu blob the guest only reads
+# the mode at startup, so later host window resizes are ignored. Enable
+# blob='true' on the virtio video model hypervisor-side for true dynamic
+# scanout. See TODO.md "Sway VM Display Auto-Rescaling".
 output * resolution 1920x1080 position 0,0 scale 1
 output * bg /usr/share/backgrounds/pendora/wallpaper.svg fill
 
@@ -86,7 +88,6 @@ exec wl-paste --type image --watch cliphist store
 exec_always python3 ~/.config/sway/scripts/inactive-windows-transparency.py --focused 1.0 --opacity 0.88
 exec_always ~/.config/sway/scripts/apply-gnome-keyboard-layout.sh
 exec spice-vdagent -x
-exec ~/.config/sway/scripts/sway-spice-clipboard-bridge
 
 #---------------------
 #---- KEYBINDINGS ----

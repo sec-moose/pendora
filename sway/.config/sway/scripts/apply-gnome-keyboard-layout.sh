@@ -64,13 +64,24 @@ variant="${parsed#*|}"
 
 [ -z "$layout" ] && layout="us"
 
+# SEC-10: validate layout/variant against standard xkb grammar before passing to swaymsg
+is_valid_xkb_component() {
+    [[ "$1" =~ ^[a-zA-Z0-9_,()+@-]+$ ]]
+}
+
 # Apply dynamically to running Sway session
 if command -v swaymsg &>/dev/null && [ -n "${SWAYSOCK:-}" ]; then
-    swaymsg input "type:keyboard" xkb_layout "$layout" 2>/dev/null || true
-    if [ -n "$variant" ]; then
-        swaymsg input "type:keyboard" xkb_variant "$variant" 2>/dev/null || true
-    fi
-    if [[ "$layout" == *","* ]]; then
-        swaymsg input "type:keyboard" xkb_options "grp:alt_shift_toggle" 2>/dev/null || true
+    if is_valid_xkb_component "$layout"; then
+        swaymsg input "type:keyboard" xkb_layout "$layout" 2>/dev/null || true
+        if [ -n "$variant" ] && is_valid_xkb_component "$variant"; then
+            swaymsg input "type:keyboard" xkb_variant "$variant" 2>/dev/null || true
+        elif [ -n "$variant" ]; then
+            echo "Warning: skipping invalid xkb variant: '$variant'" >&2
+        fi
+        if [[ "$layout" == *","* ]]; then
+            swaymsg input "type:keyboard" xkb_options "grp:alt_shift_toggle" 2>/dev/null || true
+        fi
+    else
+        echo "Warning: skipping invalid xkb layout: '$layout'" >&2
     fi
 fi

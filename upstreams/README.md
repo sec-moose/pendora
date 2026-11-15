@@ -8,12 +8,15 @@ This directory contains deployment scripts and documentation for security tools,
 |---|---|---|---|
 | **Metasploit** | Rapid7 Omnibus Installer | CLI (`msfconsole`) | Industry standard penetration testing framework |
 | **Burp Suite** | PortSwigger Linux Installer | GUI (`burpsuite`) | Web application security testing and interception proxy |
-| **SecLists** | GitHub Git Clone | `/usr/share/wordlists/seclists` | Security tester's companion wordlists & dictionaries |
+| **SecLists** | GitHub Git Clone | `/usr/share/seclists` | Security tester's companion wordlists & dictionaries |
 | **Evil-WinRM** | RubyGem (`gem install`) | CLI (`evil-winrm`) | Ultimate WinRM shell for Windows penetration testing |
 | **OWASP ZAP** | Flathub Flatpak | GUI (`zap`) | Open source web application vulnerability scanner |
 | **Hack Nerd Font** | GitHub Release (`ryanoasis/nerd-fonts`) | System Fonts | Monospace font with full icons for terminal & prompt |
 | **RustScan** | GitHub Release (`bee-san/RustScan`) | CLI (`/usr/local/bin/rustscan`) | Ultra-fast 65k-port scanner piped directly to Nmap |
 | **Naabu** | GitHub Release (`projectdiscovery/naabu`) | CLI (`/usr/local/bin/naabu`) | Fast TCP SYN/CONNECT port scanner (ProjectDiscovery) |
+| **Kerbrute** | Go Install (`go install github.com/ropnop/kerbrute@latest`) | CLI (`/usr/local/bin/kerbrute`) | Kerberos username enumeration & brute-forcing for Active Directory |
+| **linPEAS** | GitHub Release (`PEASS-ng/PEASS-ng`) | CLI (`/usr/local/bin/linpeas`) | Linux local privilege escalation & security assessment scanner |
+| **winPEAS** | GitHub Release (`PEASS-ng/PEASS-ng`) | Binaries (`/usr/local/share/peass`) | Windows local privilege escalation scanners (`winPEASany.exe`, transfer to targets) |
 | **Portainer CE** | Docker Container | `https://localhost:9443` | Container management web interface |
 | **SysReptor** | Docker Compose Installer | `http://localhost:8000` | Pentest reporting and finding documentation platform |
 | **BloodHound CE** | Docker Compose (official SpecterOps compose file) | `http://localhost:8080` | Active Directory attack path analysis & visualization (Portainer manageable) |

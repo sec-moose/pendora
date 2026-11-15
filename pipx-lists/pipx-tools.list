@@ -13,6 +13,7 @@ git+https://github.com/Pennyw0rth/NetExec  # Modern network execution and AD exp
 impacket                    # Network protocol tools suite (secretsdump, psexec, wmiexec, etc.)
 certipy-ad                  # Active Directory Certificate Services (AD CS) enumeration and abuse
 bloodhound-ce               # Python-based ingestor/collector for BloodHound Community Edition
+enum4linux-ng @ git+https://github.com/cddmp/enum4linux-ng@v1.3.10  # Windows/Samba enumeration, pinned to the Kali-shipped 1.3.10 (needs samba-client/samba-common-tools)
 
 # --- Web Application Testing & Reconnaissance ---
 sqlmap                      # Automatic SQL injection and database takeover engine

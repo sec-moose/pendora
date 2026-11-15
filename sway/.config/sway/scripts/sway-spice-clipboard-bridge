@@ -11,6 +11,7 @@ import fcntl
 import glob
 import os
 import signal
+import stat as stat_module
 import subprocess
 import sys
 import threading
@@ -47,7 +48,12 @@ target_disp = os.environ.get("DISPLAY")
 for _ in range(60):
     if target_disp and os.path.exists(f"/tmp/.X11-unix/X{target_disp.lstrip(':')}"):
         break
-    x_socks = sorted(glob.glob("/tmp/.X11-unix/X[0-9]*"))
+    x_socks = []
+    for s in sorted(glob.glob("/tmp/.X11-unix/X[0-9]*")):
+        # SEC-04: only trust sockets owned by our uid
+        st = os.stat(s)
+        if stat_module.S_ISSOCK(st.st_mode) and st.st_uid == os.getuid():
+            x_socks.append(s)
     if x_socks:
         target_disp = ":" + os.path.basename(x_socks[-1])[1:]
         break
@@ -83,8 +89,10 @@ def log(msg):
 
 def wl_copy(text):
     try:
+        # SEC-09: pass clipboard text via stdin, not argv (leaks via process list)
         subprocess.run(
-            ["wl-copy", "--type", TEXT_MIME, "--", text],
+            ["wl-copy", "--type", TEXT_MIME],
+            input=text.encode("utf-8"),
             timeout=5,
             check=False,
             env=WL_ENV,
@@ -116,8 +124,8 @@ def reconcile():
     try:
         xtext = clipboard.wait_for_text()
         if xtext is None:
-            if last_text is not None:
-                clipboard.set_text(last_text, -1)
+            # SEC-12: treat unreadable/empty selection as an intentional clear
+            last_text = None
         elif xtext != last_text:
             last_text = xtext
             wl_copy(xtext)

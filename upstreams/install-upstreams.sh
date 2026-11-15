@@ -44,12 +44,15 @@ ${BOLD}Options:${NC}
 ${BOLD}Available Upstream Tools:${NC}
   metasploit      Metasploit Framework (via Rapid7 official omnibus installer)
   burpsuite       Burp Suite Community Edition (via PortSwigger Linux installer)
-  seclists        SecLists wordlist collection cloned to /usr/share/wordlists/seclists
+  seclists        SecLists wordlist collection cloned to /usr/share/seclists
   evil-winrm      Evil-WinRM Windows remote management shell (via gem)
   zap             Zed Attack Proxy (via Flathub Flatpak)
   hack-font       Hack Nerd Font (TTF glyphs from official Nerd Fonts release)
   rustscan        RustScan modern 65k-port scanner (via GitHub release -> /usr/local/bin/rustscan)
   naabu           Naabu fast port scanner (via ProjectDiscovery -> /usr/local/bin/naabu)
+  kerbrute        Kerbrute AD username enumeration (via go install -> /usr/local/bin/kerbrute)
+  linpeas         linPEAS Linux priv-esc scanner (via PEASS-ng release -> /usr/local/bin/linpeas)
+  winpeas         winPEAS Windows priv-esc binaries (via PEASS-ng release -> /usr/local/share/peass)
   portainer       Portainer Community Edition (management UI container on port 9443)
   sysreptor       SysReptor CE pentest reporting platform (via Docker Compose on port 8000)
   bloodhound      BloodHound Community Edition (via Docker Compose on port 8080)
@@ -118,14 +121,19 @@ EOF
 }
 
 install_seclists() {
-    log_info "Installing SecLists to /usr/share/wordlists/seclists..."
-    local target_dir="/usr/share/wordlists/seclists"
+    local target_dir="/usr/share/seclists"
+    local legacy_dir="/usr/share/seclists"
+    log_info "Installing SecLists to $target_dir..."
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] sudo mkdir -p /usr/share/wordlists"
+        echo "  [DRY-RUN] [ -d $legacy_dir/.git ] && sudo mv $legacy_dir $target_dir"
         echo "  [DRY-RUN] sudo git clone --depth 1 https://github.com/danielmiessler/SecLists.git $target_dir"
         echo "  [DRY-RUN] sudo tar -xzf $target_dir/Passwords/Leaked-Databases/rockyou.txt.tar.gz -C $target_dir/Passwords/Leaked-Databases/"
     else
-        sudo mkdir -p /usr/share/wordlists
+        # Migrate legacy installs: keep the git clone (pull --ff-only still works)
+        if [ -d "$legacy_dir/.git" ] && [ ! -d "$target_dir" ]; then
+            log_info "Migrating SecLists from $legacy_dir to $target_dir..."
+            sudo mv "$legacy_dir" "$target_dir"
+        fi
         if [ -d "$target_dir/.git" ]; then
             log_info "SecLists already exists. Pulling latest updates..."
             sudo git -C "$target_dir" pull --ff-only
@@ -150,9 +158,9 @@ install_evil_winrm() {
             return 1
         fi
         # Ensure ruby.h and readline headers are installed for compiling readline-ext native gem
-        if ! rpm -q ruby-devel readline-devel &>/dev/null; then
-            log_info "Installing missing ruby-devel and readline-devel for native gem compilation..."
-            sudo dnf install -y ruby-devel readline-devel
+        if ! rpm -q ruby-devel readline-devel redhat-rpm-config &>/dev/null; then
+            log_info "Installing missing ruby-devel, readline-devel, and redhat-rpm-config for native gem compilation..."
+            sudo dnf install -y ruby-devel readline-devel redhat-rpm-config
         fi
         sudo gem install evil-winrm
         log_success "Evil-WinRM installed."
@@ -392,6 +400,8 @@ install_portainer() {
         done
         [ -z "$setup_token" ] && setup_token="Check 'sudo docker logs portainer' for setup_token"
 
+        # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+        sudo install -m 600 /dev/null "$creds_file" 2>/dev/null || true
         sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the Setup Token above is still valid."
 Web URL:      https://localhost:9443
 Username:     admin
@@ -410,6 +420,8 @@ EOF
         echo -e "  Saved to:     ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: Complete the initial admin setup in the web UI within 5 minutes - the Setup Token above expires after that!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
+        # SEC-08: remind the user that the credentials card is a plaintext bootstrap record
+        log_info "${creds_file} is a plaintext bootstrap record: move this token into a password manager and delete the file afterwards (sudo rm ${creds_file})."
         echo
         if [ "$ASSUME_YES" = false ]; then
             read -rp "Please copy the Setup Token and URL above. Press [Enter] to continue: " _ || true
@@ -466,6 +478,8 @@ install_sysreptor() {
             log_info "Running SysReptor installer in unattended mode (Community Edition)..."
 
             local installer_rc=0
+            # SEC-11: pre-create with restrictive mode so the installer log never appears world-readable
+            sudo install -m 600 /dev/null "${install_dir}/admin_install.log" 2>/dev/null || true
             (
                 cd "$install_dir"
                 sudo env \
@@ -492,6 +506,24 @@ install_sysreptor() {
             /opt/sysreptor/sysreptor/deploy/docker-compose.yml \
             /opt/sysreptor/sysreptor/deploy/caddy/docker-compose.yml \
             /opt/sysreptor/sysreptor/deploy/languagetool/docker-compose.yml 2>/dev/null || true
+        # SEC-05: pin the published port to loopback. The vendor layout publishes via the app
+        # service as ${BIND_PORT:-127.0.0.1:8000:8000} in sysreptor/docker-compose.yml (caddy is
+        # only used for FQDN/TLS deployments and is not enabled here). The vendor default is
+        # already loopback - pin it in deploy/.env so a future default change cannot silently
+        # expose the reporting UI.
+        local sr_env="/opt/sysreptor/sysreptor/deploy/.env"
+        if ! sudo grep -q '^BIND_PORT=' "$sr_env" 2>/dev/null; then
+            echo 'BIND_PORT="127.0.0.1:8000:8000"' | sudo tee -a "$sr_env" >/dev/null 2>&1 || true
+        fi
+        # Effective check: complain only if a SysReptor container is actually published on all
+        # interfaces (recreate once to apply the pin if so); a stopped stack is not an error.
+        if sudo docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -Ei 'sysreptor' | grep -qE '0\.0\.0\.0:8000|\[::\]:8000'; then
+            log_info "SysReptor port 8000 is published on all interfaces - recreating the stack to apply the loopback binding..."
+            (cd /opt/sysreptor/sysreptor/deploy && sudo docker compose up -d 2>/dev/null) || true
+        fi
+        if sudo docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -Ei 'sysreptor' | grep -qE '0\.0\.0\.0:8000|\[::\]:8000'; then
+            log_error 'SysReptor port 8000 is STILL published on all interfaces (check: sudo docker ps --format "{{.Names}} {{.Ports}}")'
+        fi
         sudo docker update --restart=no $(cd /opt/sysreptor/sysreptor/deploy 2>/dev/null && sudo docker compose ps -q 2>/dev/null) 2>/dev/null || true
 
         # Reset the reptor password to a fresh generated value so the banner always shows working
@@ -509,6 +541,8 @@ install_sysreptor() {
             sleep 3
         done
         if [ "$reset_ok" = true ]; then
+            # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+            sudo install -m 600 /dev/null "$creds_file" 2>/dev/null || true
             printf 'Web URL:   http://localhost:8000\nUsername:  reptor\nPassword:  %s\n' "${new_pw}" | sudo tee "$creds_file" >/dev/null || log_warn "Could not write $creds_file."
             sudo chmod 600 "$creds_file" 2>/dev/null || true
         else
@@ -526,6 +560,8 @@ install_sysreptor() {
         echo -e "  Saved to:  ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: Please change this password on first login!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
+        # SEC-08: remind the user that the credentials card is a plaintext bootstrap record
+        log_info "${creds_file} is a plaintext bootstrap record: move these credentials into a password manager and delete the file afterwards (sudo rm ${creds_file})."
         echo
         if [ "$ASSUME_YES" = false ]; then
             read -rp "Please copy your username and password above. Press [Enter] to continue: " _ || true
@@ -567,6 +603,8 @@ install_bloodhound() {
         local initial_pw
         initial_pw="$(openssl rand -base64 20 | tr -d '\r\n=')"
         log_info "Writing bloodhound.config.json + .env (admin password is reset to a fresh value on every run)..."
+        # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+        sudo install -m 600 /dev/null "$install_dir/bloodhound.config.json" 2>/dev/null || true
         sudo tee "$install_dir/bloodhound.config.json" >/dev/null <<EOF || { log_error "Could not write $install_dir/bloodhound.config.json."; return 0; }
 {
   "version": 1,
@@ -592,12 +630,19 @@ install_bloodhound() {
   }
 }
 EOF
+        # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+        sudo install -m 600 /dev/null "$install_dir/.env" 2>/dev/null || true
         printf 'bhe_recreate_default_admin=true\n' | sudo tee "$install_dir/.env" >/dev/null || { log_error "Could not write $install_dir/.env."; return 0; }
         sudo chmod 600 "$install_dir/bloodhound.config.json" "$install_dir/.env" 2>/dev/null || true
         sudo chmod 755 "$install_dir" 2>/dev/null || true
 
-        # Restrict port binding to localhost loopback in docker-compose.yml
-        sudo sed -i 's|[[:space:]]*- 8080:8080|      - 127.0.0.1:8080:8080|g; s|[[:space:]]*- "8080:8080"|      - "127.0.0.1:8080:8080"|g' "$install_dir/docker-compose.yml" 2>/dev/null || true
+        # SEC-04b: pin the published port to loopback. Upstream changed the compose to
+        # ${BLOODHOUND_HOST:-127.0.0.1}:${BLOODHOUND_PORT:-8080}:8080 - the old literal
+        # '8080:8080' no longer exists, so a literal sed is a silent no-op. Pin
+        # BLOODHOUND_HOST explicitly in .env (the --force-recreate below applies it).
+        if ! sudo grep -q '^BLOODHOUND_HOST=' "$install_dir/.env" 2>/dev/null; then
+            echo 'BLOODHOUND_HOST=127.0.0.1' | sudo tee -a "$install_dir/.env" >/dev/null 2>&1 || true
+        fi
 
         # Enable the commented-out config mount in the compose file (idempotent)
         sudo sed -i 's|^    # volumes:$|    volumes:|; s|^    #   - \./bloodhound\.config\.json:/bloodhound\.config\.json:ro$|      - ./bloodhound.config.json:/bloodhound.config.json:ro|' "$install_dir/docker-compose.yml"
@@ -624,6 +669,12 @@ EOF
             return 0
         fi
 
+        # SEC-04b: effective check - fail loudly only if BloodHound is actually published on
+        # all interfaces (the pin above plus --force-recreate should make this impossible)
+        if sudo docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -i 'bloodhound' | grep -qE '0\.0\.0\.0:8080|\[::\]:8080'; then
+            log_error 'BloodHound port 8080 is published on ALL interfaces (check: sudo docker ps --format "{{.Names}} {{.Ports}}")'
+        fi
+
         # Wait for the UI to answer (initial graph analysis can take ~1 minute; exit 137 = out of memory)
         log_info "Waiting for the BloodHound UI to answer on http://localhost:8080..."
         local ui_up=false
@@ -647,6 +698,8 @@ EOF
         local parsed_pw="$initial_pw"
 
         # Save credentials to /opt/bloodhound/admin_credentials.txt
+        # SEC-11: pre-create with restrictive mode so the credentials never appear world-readable
+        sudo install -m 600 /dev/null "$creds_file" 2>/dev/null || true
         sudo tee "$creds_file" >/dev/null <<EOF || log_warn "Could not write $creds_file; the credentials above are still valid."
 Web URL:   http://localhost:8080
 Username:  ${parsed_user}
@@ -664,6 +717,8 @@ EOF
         echo -e "  Saved to:  ${creds_file}"
         echo -e "${YELLOW}  ⚠️  REMINDER: You must change this password on first login!${NC}"
         echo -e "${GREEN}${BOLD}====================================================${NC}"
+        # SEC-08: remind the user that the credentials card is a plaintext bootstrap record
+        log_info "${creds_file} is a plaintext bootstrap record: move these credentials into a password manager and delete the file afterwards (sudo rm ${creds_file})."
         echo
         if [ "$ASSUME_YES" = false ]; then
             read -rp "Please copy your username and password above. Press [Enter] to continue: " _ || true
@@ -767,12 +822,87 @@ install_naabu() {
     fi
 }
 
+install_linpeas() {
+    log_info "Installing linPEAS Linux privilege escalation scanner (PEASS-ng)..."
+    local dest="/usr/local/bin/linpeas"
+    local download_url="https://github.com/PEASS-ng/PEASS-ng/releases/download/20261027-87d1fe16/linpeas.sh"
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] curl -fsSL '$download_url' -o linpeas.sh"
+        echo "  [DRY-RUN] sudo install -m 755 linpeas.sh '$dest'"
+    else
+        local temp_dir
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
+        log_info "Downloading linpeas.sh release script..."
+        curl -fsSL "$download_url" -o "$temp_dir/linpeas.sh"
+        sudo install -m 755 "$temp_dir/linpeas.sh" "$dest"
+        rm -rf "$temp_dir"
+        trap - EXIT
+        log_success "linPEAS installed successfully to $dest (run on Linux targets)"
+    fi
+}
+
+install_winpeas() {
+    log_info "Installing winPEAS Windows privilege escalation binaries (PEASS-ng)..."
+    local dest_dir="/usr/local/share/peass"
+    local download_url="https://github.com/PEASS-ng/PEASS-ng/releases/download/20261027-87d1fe16/winPEASany.exe"
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] sudo mkdir -p '$dest_dir'"
+        echo "  [DRY-RUN] curl -fsSL '$download_url' -o winPEASany.exe"
+        echo "  [DRY-RUN] sudo install -m 644 winPEASany.exe '$dest_dir/winPEASany.exe'"
+    else
+        local temp_dir
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
+        sudo mkdir -p "$dest_dir"
+        log_info "Downloading winPEASany.exe release binary..."
+        curl -fsSL "$download_url" -o "$temp_dir/winPEASany.exe"
+        sudo install -m 644 "$temp_dir/winPEASany.exe" "$dest_dir/winPEASany.exe"
+        rm -rf "$temp_dir"
+        trap - EXIT
+        log_success "winPEAS installed successfully to $dest_dir/winPEASany.exe (transfer to Windows targets)"
+    fi
+}
 
 
 
 
 
 
+
+
+install_kerbrute() {
+    log_info "Installing Kerbrute Kerberos username enumeration tool (Go build)..."
+    local dest="/usr/local/bin/kerbrute"
+    local module="github.com/ropnop/kerbrute@latest"
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] Ensure the Go toolchain (golang, pkg-lists/00-base.list): sudo dnf install -y golang"
+        echo "  [DRY-RUN] GOBIN=<mktemp dir> go install -ldflags '-s -w' $module"
+        echo "  [DRY-RUN] sudo install -m 755 <mktemp dir>/kerbrute '$dest'"
+    else
+        if ! command -v go &>/dev/null; then
+            if rpm -q golang &>/dev/null; then
+                log_error "The golang RPM is installed but 'go' is not on PATH."
+                return 1
+            fi
+            log_info "Installing the Go toolchain via dnf..."
+            sudo dnf install -y golang || { log_error "Failed to install golang. Install pkg-lists/00-base.list first, then re-run."; return 1; }
+        fi
+        local temp_dir
+        temp_dir="$(mktemp -d)"
+        trap 'rm -rf "$temp_dir"' EXIT
+        log_info "Building kerbrute from source via 'go install'..."
+        GOBIN="$temp_dir" GOPATH="${GOPATH:-$HOME/go}" go install -ldflags "-s -w" "$module"
+        if [ ! -x "$temp_dir/kerbrute" ]; then
+            log_error "'go install' did not produce a kerbrute binary."
+            return 1
+        fi
+        sudo install -m 755 "$temp_dir/kerbrute" "$dest"
+        rm -rf "$temp_dir"
+        trap - EXIT
+        log_success "Kerbrute installed successfully to $dest"
+    fi
+}
 
 # Parse options
 TOOLS=()
@@ -803,7 +933,10 @@ if [ ${#TOOLS[@]} -eq 0 ]; then
 fi
 
 if [[ " ${TOOLS[*]} " =~ " all " ]]; then
-    TOOLS=("metasploit" "burpsuite" "seclists" "evil-winrm" "zap" "hack-font" "rustscan" "naabu" "portainer" "sysreptor" "bloodhound" "devtunnel" "responder")
+    # hack-font excluded from 'all' (audit M7): the Hack Nerd Font ships via the
+    # official source-foundry-hack-fonts RPM in pkg-lists/00-base.list on every
+    # profile; the explicit 'hack-font' target remains available opt-in.
+    TOOLS=("metasploit" "burpsuite" "seclists" "evil-winrm" "zap" "rustscan" "naabu" "kerbrute" "linpeas" "winpeas" "portainer" "sysreptor" "bloodhound" "devtunnel" "responder")
 elif [[ " ${TOOLS[*]} " =~ " containers " ]] || [[ " ${TOOLS[*]} " =~ " docker " ]]; then
     TOOLS=("portainer" "sysreptor" "bloodhound")
 fi
@@ -843,6 +976,15 @@ for tool in "${TOOLS[@]}"; do
             ;;
         naabu)
             install_naabu || FAILED_TOOLS+=("naabu")
+            ;;
+        kerbrute)
+            install_kerbrute || FAILED_TOOLS+=("kerbrute")
+            ;;
+        linpeas)
+            install_linpeas || FAILED_TOOLS+=("linpeas")
+            ;;
+        winpeas)
+            install_winpeas || FAILED_TOOLS+=("winpeas")
             ;;
         portainer)
             install_portainer || FAILED_TOOLS+=("portainer")

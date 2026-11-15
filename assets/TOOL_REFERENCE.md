@@ -18,6 +18,8 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **Arp-scan** | `sudo arp-scan --localnet` | Identify alive hosts on local Ethernet/WiFi |
 | **Dnsenum** | `dnsenum --enum target.com` | Comprehensive DNS enumeration & subdomains |
 | **Hping3** | `sudo hping3 -S -p 80 -c 5 <target>` | Custom TCP/IP packet assembler and tester |
+| **FTP** | `ftp <target_ip>` *(interactive login, `ls`/`get`/`put`)* | Classic FTP client for enumerating & interacting with FTP services |
+| **xfreerdp** | `xfreerdp /u:admin /p:'Password1' /v:<target_ip> /cert-ignore +dynamic-resolution` | FreeRDP client — RDP remote desktop to Windows hosts & lateral movement |
 
 ---
 
@@ -25,8 +27,8 @@ A quick-reference summary for every tool category, standalone suite, and contain
 
 | Tool | Common Command / Startup | Use Case |
 |---|---|---|
-| **FFUF** | `ffuf -u http://target/FUZZ -w /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt` | Fast web directory & parameter fuzzing |
-| **Gobuster** | `gobuster dir -u http://target -w /usr/share/wordlists/seclists/Discovery/Web-Content/raft-medium-directories.txt` | URI & directory brute-forcing |
+| **FFUF** | `ffuf -u http://target/FUZZ -w /usr/share/seclists/Discovery/Web-Content/common.txt` | Fast web directory & parameter fuzzing |
+| **Gobuster** | `gobuster dir -u http://target -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt` | URI & directory brute-forcing |
 | **WhatWeb** | `whatweb -a 3 http://target` | Web technology, server & CMS fingerprinting |
 | **HTTPie** | `http GET http://target/api/v1 Authorization:"Bearer token"` | Clean, colored terminal HTTP client |
 
@@ -36,9 +38,9 @@ A quick-reference summary for every tool category, standalone suite, and contain
 
 | Tool | Common Command / Startup | Use Case |
 |---|---|---|
-| **Hydra** | `hydra -l admin -P /usr/share/wordlists/seclists/Passwords/Leaked-Databases/rockyou.txt ssh://target` | Online network brute-force (SSH/FTP/HTTP) |
+| **Hydra** | `hydra -l admin -P /usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt ssh://target` | Online network brute-force (SSH/FTP/HTTP) |
 | **Medusa** | `medusa -h target -u admin -P wordlist.txt -M rdp` | Modular, parallel network login cracking |
-| **John the Ripper** | `john --wordlist=/usr/share/wordlists/seclists/Passwords/Leaked-Databases/rockyou.txt hashes.txt` | Offline password & shadow hash cracker |
+| **John the Ripper** | `john --wordlist=/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt hashes.txt` | Offline password & shadow hash cracker |
 | **Hashcat** | `hashcat -m 1000 -a 0 ntlm_hashes.txt rockyou.txt` | GPU-accelerated hash cracking (`-m 1000` = NTLM) |
 
 ---
@@ -72,8 +74,9 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | Tool | Command | Description |
 |---|---|---|
 | **NetExec (nxc)** | `nxc smb 192.168.1.0/24 -u user -p pass` | Modern Active Directory & network execution tool |
-| **Impacket** | `impacket <tool>` (e.g. `impacket secretsdump -h`)<br>`impacket-secretsdump domain/user:pass@target`<br>`secretsdump.py domain/user:pass@target` | Network protocol testing suite (70 tools: secretsdump, psexec, wmiexec, etc.) |
+| **Impacket** | `impacket <tool>` (e.g. `impacket secretsdump -h`)<br>`impacket-secretsdump domain/user:pass@target`<br>`sudo impacket-ntlmrelayx -tf targets.txt -smb2support` *(root-required tools resolve under sudo — launchers live in `/usr/local/bin`)* | Network protocol testing suite (70 tools: secretsdump, psexec, wmiexec, etc.) |
 | **Certipy** | `certipy find -vulnerable -u user@domain -p pass` | Active Directory Certificate Services (AD CS) auditing |
+| **enum4linux-ng** | `enum4linux-ng -A <target>` *(add `-u user -p pass` for authed enumeration)* | Windows/Samba enumeration with JSON/YAML export — pinned to Kali's v1.3.10; requires `samba-client` tools on PATH |
 | **SQLmap** | `sqlmap -u "http://target/page.php?id=1" --batch --dbs` | Automated SQL injection & database takeover |
 | **Mitmproxy** | `mitmproxy` *(interactive TUI on port 8080)* | SSL/TLS intercepting HTTP proxy |
 | **Arjun** | `arjun -u http://target/api/endpoint -m GET` | HTTP parameter discovery suite |
@@ -92,10 +95,13 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **OWASP ZAP** | `zap` *(GUI via Flatpak)* | Zed Attack Proxy web vulnerability suite |
 | **Evil-WinRM** | `evil-winrm -i target_ip -u Administrator -p pass` | Windows Remote Management shell |
 | **Responder** | `sudo responder -I eth0 -dwv` | LLMNR / NBT-NS / mDNS poisoning & hash capture |
-| **SecLists** | `/usr/share/wordlists/seclists/` | Massive collection of wordlists, payloads, usernames |
+| **SecLists** | `/usr/share/seclists/` | Massive collection of wordlists, payloads, usernames |
 | **DevTunnel** | `devtunnel host -p 8000` | Secure port forwarding to expose local ports publicly |
 | **RustScan** | `rustscan -a <target>` | Modern 65k-port scanner binary in `/usr/local/bin` |
 | **Naabu** | `naabu -host <target>` | ProjectDiscovery port scanner in `/usr/local/bin` |
+| **Kerbrute** | `kerbrute userenum --dc <dc_ip> -d <domain> /usr/share/seclists/Usernames/Names/names.txt` | Active Directory username enumeration via Kerberos pre-auth (built via `go install`) |
+| **linPEAS** | `linpeas -a` | Linux local privilege escalation scanner (PEASS-ng); run on target hosts |
+| **winPEAS** | `.\winPEASany.exe` *(on Windows target)* | Windows local privilege escalation scanner; binary staged in `/usr/local/share/peass` |
 
 ---
 
@@ -106,6 +112,8 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | **Portainer CE** | `9443` (HTTPS) | `https://localhost:9443` | User: `admin`<br>Setup token in `/opt/portainer/admin_setup.txt` |
 | **SysReptor** | `8000` (HTTP) | `http://localhost:8000` | User: `reptor`<br>Password in `/opt/sysreptor/admin_credentials.txt` |
 | **BloodHound CE** | `8080` (HTTP) | `http://localhost:8080` | User: `admin`<br>Password in `/opt/bloodhound/admin_credentials.txt` |
+
+> ⚠️ **Security note**: those credential files are plaintext bootstrap records — save the credentials in a password manager on first login, then delete them (`sudo rm -f /opt/portainer/admin_setup.txt /opt/sysreptor/admin_credentials.txt /opt/bloodhound/admin_credentials.txt`).
 
 * **Manage all containers via Docker**:
   ```bash
@@ -134,6 +142,8 @@ A quick-reference summary for every tool category, standalone suite, and contain
 
 ## 10. Sway Dynamic Desktop (`70-sway.list` & `sway/`)
 
+`SUPER` is the Windows key by default.
+
 | Keybinding | Action |
 |---|---|
 | `SUPER + T` | Open Alacritty terminal |
@@ -152,3 +162,6 @@ A quick-reference summary for every tool category, standalone suite, and contain
 | `SUPER + SHIFT + T` | Toggle floating mode for window |
 | `SUPER + SHIFT + F` | Toggle fullscreen mode for window |
 | `SUPER + Arrow Keys` | Move focus between windows (Left, Right, Up, Down) |
+| `SUPER + SHIFT + Arrow Keys` | Move focused window (Left, Right, Up, Down) |
+| `SUPER + SHIFT + R` | Restart the Noctalia shell |
+| `SUPER + Mouse Drag` | Move floating window (left-drag) / resize (right-drag) |

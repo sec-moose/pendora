@@ -1,8 +1,8 @@
 # ~/.zshrc - Kali-styled interactive Zsh configuration for Pendora (Fedora)
 # Replicates authentic Kali Linux prompt, syntax highlighting, completions and keybindings.
 
-# Ensure local user binaries (pipx, local scripts) are in PATH
-export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
+# Ensure local user binaries (pipx, local scripts, Go tools via `go install`) are in PATH
+export PATH="$HOME/.local/bin:$HOME/bin:$HOME/go/bin:$PATH"
 
 # Zsh Options
 setopt autocd              # Change directory just by typing its name
@@ -232,4 +232,4 @@ alias myip="ip -br -c a"
 alias ports="ss -tulpn"
 alias serve-http="python3 -m http.server 8000"
 alias serve-updog="updog -p 9090"
-alias seclists="ls -la /usr/share/wordlists/seclists 2>/dev/null || echo 'SecLists not installed at /usr/share/wordlists/seclists'"
+alias seclists="ls -la /usr/share/seclists 2>/dev/null || echo 'SecLists not installed at /usr/share/seclists'"

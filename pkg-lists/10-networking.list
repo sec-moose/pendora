@@ -16,6 +16,8 @@ zmap                        # Fast single-packet network scanner for Internet au
 onesixtyone                 # Efficient SNMP scanner
 snmpcheck                   # SNMP reconnaissance tool for device enumeration
 nmbscan                     # NetBIOS network scanner
+samba-client                # Samba client tools (smbclient, rpcclient, nmblookup) — enum4linux-ng runtime deps
+samba-common-tools          # Samba common tools (net) — enum4linux-ng runtime deps
 p0f                         # Passive OS fingerprinting utility
 
 # --- DNS & Host Discovery ---
@@ -30,6 +32,12 @@ fping                       # High-performance ping utility for multiple hosts
 hping3                      # Custom TCP/IP packet assembler and analyzer
 traceroute                  # Print route packets trace to network host
 iperf3                      # Network bandwidth measurement tool
+
+# --- File Transfer Clients ---
+ftp                         # Classic FTP client for enumerating and interacting with FTP services
+
+# --- Remote Access Clients ---
+freerdp                     # FreeRDP RDP clients (xfreerdp, wlfreerdp) for Windows remote desktop & lateral movement
 
 # --- Packet Capture & Traffic Analysis ---
 wireshark                   # Interactive graphical network protocol analyzer

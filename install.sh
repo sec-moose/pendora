@@ -19,22 +19,28 @@ INSTALL_ZSH=false
 INSTALL_SWAY=false
 INSTALL_ALACRITTY=false
 INSTALL_NVIM=false
+INSTALL_BTOP=false
+INSTALL_FASTFETCH=false
 INSTALL_WALLPAPER=false
 INSTALL_DOCKER_CONTAINERS=false
 SET_HOSTNAME=false
 RUN_ALL=false
 RUN_BASIC=false
+SERVER_MODE=false
+GREETER_TAG="v1.7.0"      # noctalia-greeter upstream pin (not yet in official Fedora repos)
+GREETER_COMMIT="af0bf4b1e1c40738db917b04c9c0563b4f718953"  # verified v1.7.0 commit — build refuses re-pointed tags (audit M1)
 REBOOT=true
 SELECTED_CATEGORIES=()
 CUSTOM_FILES=()
 
-# Colors for terminal output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-YELLOW='\033[1;33m'
-BOLD='\033[1m'
-NC='\033[0m'
+# Colors for terminal output ($'...' bakes real ESC bytes, so heredocs and
+# plain echo render them too — not just echo -e)
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+BLUE=$'\033[0;34m'
+YELLOW=$'\033[1;33m'
+BOLD=$'\033[1m'
+NC=$'\033[0m'
 
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $*"
@@ -68,8 +74,11 @@ ${BOLD}Options:${NC}
   -D, --docker, --containers Install Docker engine and deploy container stacks (Portainer, SysReptor, BloodHound)
   -z, --zsh                Deploy Kali-styled .zshrc configuration
   -W, --sway               Install Sway tiling desktop stack, Noctalia shell, Zsh, Neovim, Alacritty & wallpapers
+  -S, --server             Phase 1 server profile: Sway desktop stack + display manager (greetd & Noctalia greeter), VM guest fixes & Plymouth spinner splash; run '--all' afterwards for pentest tools
   -T, --alacritty          Deploy Alacritty terminal configuration & Catppuccin Macchiato theme
   -N, --nvim               Deploy Neovim/LazyVim configuration & Catppuccin Macchiato theme
+  -t, --btop               Deploy btop configuration & Catppuccin Macchiato theme
+  -F, --fastfetch          Deploy fastfetch configuration & Pendora Catppuccin Macchiato theme
   -H, --hostname           Set system hostname to 'pendora'
   -B, --wallpaper          Deploy and apply Pendora custom wallpaper
   -b, --basic              Basic pentest setup without Sway (00-60 DNF + pipx + upstreams + zsh + alacritty + nvim + wallpaper)
@@ -152,12 +161,14 @@ list_categories() {
     echo "----------------------------------------------------"
     echo "  - metasploit   (Rapid7 Omnibus Installer)"
     echo "  - burpsuite    (PortSwigger Linux Installer)"
-    echo "  - seclists     (GitHub git clone -> /usr/share/wordlists/seclists)"
+    echo "  - seclists     (GitHub git clone -> /usr/share/seclists)"
     echo "  - evil-winrm   (RubyGem)"
     echo "  - zap          (OWASP ZAP via Flatpak)"
     echo "  - hack-font    (Hack Nerd Font for terminal and prompt iconography)"
     echo "  - rustscan     (RustScan ultra-fast 65k-port scanner binary in /usr/local/bin)"
     echo "  - naabu        (Naabu fast port scanner by ProjectDiscovery in /usr/local/bin)"
+    echo "  - linpeas      (PEASS-ng Linux priv-esc scanner in /usr/local/bin)"
+    echo "  - winpeas      (PEASS-ng Windows priv-esc binaries in /usr/local/share/peass)"
     echo "  - portainer    (Portainer Community Edition UI on port 9443)"
     echo "  - sysreptor    (SysReptor CE pentest reporting platform via Docker on port 8000)"
     echo "  - bloodhound   (BloodHound Community Edition on port 8080 - Portainer manageable)"
@@ -231,6 +242,7 @@ run_pipx_install() {
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] Create impacket-* convenience symlinks in ~/.local/bin (impacket- prefix only; stale bare aliases removed)"
         echo "  [DRY-RUN] Deploy central /usr/local/bin/impacket CLI launcher"
+        echo "  [DRY-RUN] Create sudo-transparent impacket-<tool> launchers in /usr/local/bin (symlinks -> /usr/local/bin/impacket)"
     else
         if [ -d "$pipx_bin_dir" ]; then
             log_info "Configuring Impacket convenience symlinks (impacket- prefix only) in $pipx_bin_dir..."
@@ -262,7 +274,8 @@ show_impacket_help() {
     echo -e "\033[1mImpacket Security Suite\033[0m - Network Protocol Testing Framework"
     echo "Usage: impacket <tool> [args...]"
     echo "       impacket-<tool> [args...]"
-    echo "       <tool>.py [args...]"
+    echo "       sudo impacket <tool> [args...]        # root-required tools (ntlmrelayx, smbserver, ...)"
+    echo "       sudo impacket-<tool> [args...]        # Kali-style; resolves under sudo"
     echo
     echo -e "\033[1mCommon Tools:\033[0m"
     printf "  %-22s %s\n" "secretsdump" "Dump SAM hashes, LSA secrets, and NTDS.dit"
@@ -281,19 +294,40 @@ show_impacket_help() {
     echo "Run 'impacket <tool> -h' for tool-specific help (e.g. impacket secretsdump -h)"
 }
 
-if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-    show_impacket_help
-    exit 0
+# Tool name: from argv0 when invoked via an impacket-<tool> launcher symlink, else the first argument
+SELF_NAME="${0##*/}"
+if [[ "$SELF_NAME" == impacket-* ]]; then
+    TOOL="${SELF_NAME#impacket-}"
+else
+    if [ $# -eq 0 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+        show_impacket_help
+        exit 0
+    fi
+    TOOL="$1"
+    shift
+fi
+# SEC-01: strictly validate TOOL to block path traversal (e.g. 'sudo impacket ../../bin/bash')
+if [[ ! "$TOOL" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: Invalid tool name '${TOOL}'." >&2
+    exit 1
 fi
 
-TOOL="$1"
-shift
+# Candidate bin dirs: the invoking user first, then the real sudo invoker's pipx dir
+# (under 'sudo' HOME=/root, while Pendora's pipx tools live in the standard user's
+# ~/.local/bin, which root's secure_path never searches).
+# SEC-01: never glob /home/* — only the invoking user and SUDO_USER are searched.
+CANDIDATE_DIRS=( "$HOME/.local/bin" )
+if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+    SU_HOME="$(getent passwd "${SUDO_USER}" 2>/dev/null | cut -d: -f6)"
+    [ -n "$SU_HOME" ] && CANDIDATE_DIRS+=( "$SU_HOME/.local/bin" )
+fi
 
-# Check candidate paths
-for CANDIDATE in "$HOME/.local/bin/${TOOL}.py" "$HOME/.local/bin/${TOOL}" "/usr/local/bin/${TOOL}.py" "${TOOL}.py" "${TOOL}"; do
-    if command -v "$CANDIDATE" &>/dev/null; then
-        exec "$CANDIDATE" "$@"
-    fi
+for CANDIDATE in "${TOOL}.py" "${TOOL}"; do
+    for DIR in "${CANDIDATE_DIRS[@]}"; do
+        if [ -x "$DIR/$CANDIDATE" ]; then
+            exec "$DIR/$CANDIDATE" "$@"
+        fi
+    done
 done
 
 echo "Error: Impacket tool '${TOOL}' not found." >&2
@@ -301,6 +335,25 @@ echo "Run 'impacket --help' to view available tools." >&2
 exit 1
 EOF
         sudo chmod +x /usr/local/bin/impacket
+
+        # Sudo-transparent dashed launchers: root's secure_path includes /usr/local/bin
+        # but never ~/.local/bin, so 'sudo impacket-<tool>' resolves here and the runner
+        # locates the tool in the standard user's pipx dir (Kali muscle memory, e.g.
+        # sudo impacket-ntlmrelayx -tf targets.txt -smb2support)
+        # SEC-01: enumerate only the impacket pipx venv's own bin dir, never the
+        # shared ~/.local/bin (which may hold other tools' *.py scripts).
+        impacket_venv_bin="${target_home}/.local/share/pipx/venvs/impacket/bin"
+        if [ -d "$impacket_venv_bin" ]; then
+            log_info "Deploying sudo-transparent impacket-<tool> launchers to /usr/local/bin..."
+            for script in "$impacket_venv_bin"/*.py; do
+                [ -f "$script" ] || continue
+                local base_name
+                base_name="$(basename "$script" .py)"
+                sudo ln -sf impacket "/usr/local/bin/impacket-${base_name}"
+            done
+        else
+            log_info "Impacket pipx venv not found at $impacket_venv_bin; skipping impacket-* launcher symlinks."
+        fi
         log_success "Impacket launcher and symlinks configured."
     fi
 }
@@ -371,7 +424,7 @@ stow_module() {
     log_info "Applying ${BOLD}${module}${NC} dotfiles via GNU Stow into $target_home..."
     mkdir -p "$target_home/.config"
     if [ -n "${SUDO_USER:-}" ] && [ "$EUID" -eq 0 ]; then
-        chown "${target_user}:$(id -gn "$target_user")" "$target_home/.config"
+        chown -h "${target_user}:$(id -gn "$target_user")" "$target_home/.config"
     fi
 
     # Back up existing non-symlink targets to prevent Stow conflicts
@@ -404,6 +457,20 @@ stow_module() {
                 local n_bak="$target_home/.config/nvim.bak.$(date +%Y%m%d_%H%M%S)"
                 log_info "Existing non-symlink directory $target_home/.config/nvim found. Backing up to $n_bak"
                 mv "$target_home/.config/nvim" "$n_bak"
+            fi
+            ;;
+        btop)
+            if [ -d "$target_home/.config/btop" ] && [ ! -L "$target_home/.config/btop" ]; then
+                local b_bak="$target_home/.config/btop.bak.$(date +%Y%m%d_%H%M%S)"
+                log_info "Existing non-symlink directory $target_home/.config/btop found. Backing up to $b_bak"
+                mv "$target_home/.config/btop" "$b_bak"
+            fi
+            ;;
+        fastfetch)
+            if [ -d "$target_home/.config/fastfetch" ] && [ ! -L "$target_home/.config/fastfetch" ]; then
+                local ff_bak="$target_home/.config/fastfetch.bak.$(date +%Y%m%d_%H%M%S)"
+                log_info "Existing non-symlink directory $target_home/.config/fastfetch found. Backing up to $ff_bak"
+                mv "$target_home/.config/fastfetch" "$ff_bak"
             fi
             ;;
     esac
@@ -476,11 +543,11 @@ deploy_zsh_config() {
 
     stow_module "zsh"
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] sudo usermod -s \$(which zsh) \$USER"
+        echo "  [DRY-RUN] sudo usermod -s \$(command -v zsh) \$USER"
     else
         if command -v zsh &>/dev/null; then
             local zsh_bin
-            zsh_bin="$(which zsh)"
+            zsh_bin="$(command -v zsh)"
             local current_login_shell
             current_login_shell="$(getent passwd "$target_user" 2>/dev/null | cut -d: -f7)"
             if [ "$current_login_shell" != "$zsh_bin" ]; then
@@ -505,9 +572,8 @@ configure_screensharing_systemd() {
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] mkdir -p /home/\$USER/.config/systemd/user"
         echo "  [DRY-RUN] Write /home/\$USER/.config/systemd/user/sway-session.target"
-        echo "  [DRY-RUN] systemctl --user daemon-reload"
-        echo "  [DRY-RUN] systemctl --user enable --now sway-spice-clipboard-bridge.service"
-        echo "  [DRY-RUN] systemctl --user start sway-session.target xdg-desktop-portal xdg-desktop-portal-wlr"
+        echo "  [DRY-RUN] Enable sway-spice-clipboard-bridge.service via sway-session.target.wants (bus-free)"
+        echo "  [DRY-RUN] Enable-only: session services activate via sway-session.target on first login"
     else
         mkdir -p "$target_dir"
         cat > "$target_file" <<'EOF'
@@ -523,13 +589,250 @@ EOF
         fi
         log_success "Created $target_file"
 
-        systemctl --user daemon-reload 2>/dev/null || true
-        systemctl --user enable sway-spice-clipboard-bridge.service 2>/dev/null || true
-        systemctl --user start sway-session.target 2>/dev/null || true
-        systemctl --user start xdg-desktop-portal 2>/dev/null || true
-        systemctl --user start xdg-desktop-portal-wlr 2>/dev/null || true
-        systemctl --user start sway-spice-clipboard-bridge.service 2>/dev/null || true
-        log_success "Sway screensharing and SPICE clipboard bridge services configured."
+        # Enable-only, headless-safe: there is no user bus or Wayland display at install
+        # time, and `systemctl --user enable` would fail against a nonexistent manager.
+        # The wants symlink below is bus-free. sway's own `exec systemctl --user start
+        # sway-session.target` activates all wanted units on first real login.
+        local bridge_wants_dir="${target_dir}/sway-session.target.wants"
+        if [ -f "${target_dir}/sway-spice-clipboard-bridge.service" ]; then
+            mkdir -p "$bridge_wants_dir"
+            ln -sfn ../sway-spice-clipboard-bridge.service "${bridge_wants_dir}/sway-spice-clipboard-bridge.service"
+            log_success "sway-spice-clipboard-bridge enabled via sway-session.target.wants (activates on login)."
+        else
+            log_warn "sway-spice-clipboard-bridge.service not found in ${target_dir}; enable skipped."
+        fi
+        log_success "Sway session units written; services activate via sway-session.target on first login."
+    fi
+}
+
+install_noctalia_greeter() {
+    # Build noctalia-greeter from a pinned upstream tag. Not yet packaged in the official
+    # Fedora repositories (watch item in TODO.md); on any failure the caller keeps
+    # tuigreet as the active greeter, so phase 1 always yields a working login screen.
+    local greeter_tag="${GREETER_TAG}"
+    if command -v noctalia-greeter-session &>/dev/null; then
+        log_info "noctalia-greeter already installed, skipping build."
+        return 0
+    fi
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] Install noctalia-greeter build deps; git clone ${greeter_tag}; meson build; meson install"
+        return 0
+    fi
+
+    log_info "Installing noctalia-greeter build dependencies (official Fedora repositories)..."
+    sudo dnf install -y meson gcc-c++ git wayland-devel wayland-protocols-devel \
+        wlroots-devel libinput-devel libevdev-devel mesa-libEGL-devel \
+        cairo-devel pango-devel harfbuzz-devel freetype-devel fontconfig-devel \
+        libxkbcommon-devel glib2-devel tomlplusplus-devel json-devel \
+        stb_image_resize2-devel libwebp-devel libjxl-devel librsvg2-devel libxml2-devel \
+        || { log_error "Failed to install noctalia-greeter build dependencies."; return 1; }
+
+    log_info "Building noctalia-greeter ${greeter_tag} (Meson; this can take a few minutes)..."
+    (
+        set -e
+        temp_dir="$(mktemp -d -m 0700)"
+        trap 'rm -rf "$temp_dir"' EXIT
+        git clone --depth 1 --branch "${greeter_tag}" \
+            https://github.com/noctalia-dev/noctalia-greeter "${temp_dir}/noctalia-greeter"
+        cd "${temp_dir}/noctalia-greeter"
+        resolved_commit="$(git rev-parse HEAD)"
+        log_info "noctalia-greeter ${greeter_tag} resolved to commit ${resolved_commit}."
+        if [ "${resolved_commit}" != "${GREETER_COMMIT}" ]; then
+            log_error "Upstream tag ${greeter_tag} does not point at the pinned commit ${GREETER_COMMIT} — refusing to build (supply-chain guard)."
+            exit 1
+        fi
+        meson setup build --prefix=/usr --buildtype=release
+        sudo meson install -C build
+    ) || { log_error "noctalia-greeter build failed."; return 1; }
+
+    log_success "noctalia-greeter ${greeter_tag} installed."
+}
+
+configure_server_login() {
+    echo
+    echo -e "${BOLD}Configuring Server Login (greetd + Noctalia Greeter)${NC}"
+    echo "===================================================="
+
+    # 1. Standard XDG user directories: Fedora Server minimal ships a bare
+    #    /home/USER (no Downloads/Documents/Pictures/...). xdg-user-dirs-update
+    #    is idempotent and also writes ~/.config/user-dirs.dirs for the session.
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] xdg-user-dirs-update as target user (creates Desktop, Downloads, Documents, Music, Pictures, Public, Videos)"
+    else
+        local target_user="${SUDO_USER:-$USER}"
+        local target_home
+        target_home="$(getent passwd "$target_user" 2>/dev/null | cut -d: -f6)"
+        [ -z "$target_home" ] && target_home="$HOME"
+        local xdg_cmd=(xdg-user-dirs-update)
+        if [ -n "${SUDO_USER:-}" ] && [ "$EUID" -eq 0 ]; then
+            xdg_cmd=(sudo -u "$target_user" env HOME="$target_home" USER="$target_user" xdg-user-dirs-update)
+        fi
+        "${xdg_cmd[@]}" || { log_error "Failed to create standard user directories."; return 1; }
+        log_success "Standard user directories provisioned for ${target_user}."
+    fi
+
+    # 2. Invisible-cursor fix: virtio-gpu/bochs hardware-cursor plane flips fail under
+    #    wlroots in virtual machines (sway audit 2026-10-22).
+    if grep -q '^WLR_NO_HARDWARE_CURSORS=' /etc/environment 2>/dev/null; then
+        log_info "WLR_NO_HARDWARE_CURSORS already present in /etc/environment."
+    elif [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] Append WLR_NO_HARDWARE_CURSORS=1 to /etc/environment"
+    else
+        echo 'WLR_NO_HARDWARE_CURSORS=1' | sudo tee -a /etc/environment >/dev/null
+        log_success "WLR_NO_HARDWARE_CURSORS=1 set in /etc/environment."
+    fi
+
+    # 3. SPICE guest agent daemon: system service, safe to enable headless. Required for
+    #    the clipboard socket /run/spice-vdagentd/spice-vdagent-sock used by the bridge.
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] systemctl enable --now spice-vdagentd"
+    else
+        if sudo systemctl enable --now spice-vdagentd 2>/dev/null; then
+            log_success "spice-vdagentd enabled and started."
+        else
+            log_warn "Could not enable spice-vdagentd (no SPICE virtual hardware?). Clipboard sharing will not work."
+        fi
+    fi
+
+    # 4. Cockpit web console socket: Fedora Server enables it (port 9090) by default;
+    #    a pentest VM has no use for a web management console. Server-specific —
+    #    hosts without the Fedora Server release identification are left untouched.
+    if ! rpm -q fedora-release-server &>/dev/null; then
+        log_info "Not a Fedora Server host — cockpit.socket left untouched."
+    elif [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] systemctl disable --now cockpit.socket (if enabled or active)"
+    elif systemctl is-enabled cockpit.socket &>/dev/null || systemctl is-active cockpit.socket &>/dev/null; then
+        sudo systemctl disable --now cockpit.socket 2>/dev/null \
+            && log_success "cockpit.socket disabled (web console closed)." \
+            || log_warn "Could not disable cockpit.socket — verify manually with: systemctl status cockpit.socket"
+    else
+        log_info "cockpit.socket not enabled on this host."
+    fi
+
+    # 5. Display manager: greetd (pkg-lists/70-sway.list) with the Noctalia greeter.
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] Build + install noctalia-greeter from pinned upstream tag ${GREETER_TAG} @ ${GREETER_COMMIT} (fallback: tuigreet)"
+        echo "  [DRY-RUN] Ensure system user 'greeter' and /var/lib/greetd + /var/lib/noctalia-greeter (0750 greeter:greeter)"
+        echo "  [DRY-RUN] Write /etc/greetd/config.toml (default_session = noctalia-greeter-session, fallback tuigreet)"
+        echo "  [DRY-RUN] Refuse if another display manager (gdm/sddm/lightdm/lxdm/xdm) is enabled or active"
+        echo "  [DRY-RUN] systemctl set-default graphical.target"
+        echo "  [DRY-RUN] Add greetd plymouth-ordering drop-in (LUKS-safe boot hand-off)"
+        echo "  [DRY-RUN] systemctl enable --now greetd (supersedes getty@tty1 via Conflicts=)"
+        return 0
+    fi
+
+    if ! command -v greetd &>/dev/null; then
+        log_error "greetd is not installed. Ensure pkg-lists/70-sway.list was included (--sway/--server/--all)."
+        return 1
+    fi
+
+    install_noctalia_greeter || log_warn "Continuing with tuigreet as the active greeter."
+
+    # Greeter user + state directory (required by noctalia-greeter).
+    if ! id -u greeter &>/dev/null; then
+        sudo useradd -r -d /var/lib/greetd -s /usr/sbin/nologin greeter \
+            || { log_error "Failed to create system user 'greeter'."; return 1; }
+        log_success "Created system user 'greeter'."
+    fi
+    # Provision the greeter's home: useradd -d does not create it, and without a
+    # correctly owned home the greeter's systemd --user instance fails to manage
+    # its unit dirs ("Failed to resolve symlink ... Permission denied").
+    sudo install -d -m 0750 -o greeter -g greeter /var/lib/greetd
+    sudo mkdir -p /var/lib/noctalia-greeter \
+        && sudo chown greeter:greeter /var/lib/noctalia-greeter \
+        && sudo chmod 0750 /var/lib/noctalia-greeter \
+        || { log_error "Failed to provision /var/lib/noctalia-greeter (0750 greeter:greeter)."; return 1; }
+
+    # greetd configuration: prefer the Noctalia greeter, fall back to tuigreet.
+    local greeter_cmd="/usr/bin/tuigreet --time --cmd sway"
+    if command -v noctalia-greeter-session &>/dev/null; then
+        greeter_cmd="/usr/bin/noctalia-greeter-session"
+    else
+        log_warn "noctalia-greeter unavailable - using tuigreet."
+    fi
+    if [ -f /etc/greetd/config.toml ]; then
+        sudo cp /etc/greetd/config.toml "/etc/greetd/config.toml.bak.$(date +%s)" \
+            || log_warn "Could not back up the existing /etc/greetd/config.toml."
+    fi
+    printf '[terminal]\nvt = 1\n\n[default_session]\ncommand = "%s"\nuser = "greeter"\n' "${greeter_cmd}" \
+        | sudo tee /etc/greetd/config.toml >/dev/null \
+        || { log_error "Failed to write /etc/greetd/config.toml."; return 1; }
+    log_success "Wrote /etc/greetd/config.toml (command = ${greeter_cmd})."
+
+    # Pin the Sway session and initialize the greeter's appearance state.
+    if command -v noctalia-greeter-apply-appearance &>/dev/null; then
+        sudo noctalia-greeter-apply-appearance --setup-system 2>/dev/null || true
+    fi
+    if sudo test -f /var/lib/noctalia-greeter/greeter.toml && ! sudo grep -q 'default = "Sway"' /var/lib/noctalia-greeter/greeter.toml 2>/dev/null; then
+        printf '\n[session]\ndefault = "Sway"\n' | sudo tee -a /var/lib/noctalia-greeter/greeter.toml >/dev/null
+    fi
+
+    # Refuse to fight an existing display manager for VT 1 (audit M5).
+    local other_dm dm_taken=false
+    for other_dm in gdm sddm lightdm lxdm xdm; do
+        if systemctl is-enabled "${other_dm}" &>/dev/null || systemctl is-active "${other_dm}" &>/dev/null; then
+            dm_taken=true
+            log_error "Display manager '${other_dm}' is enabled or active — disable it before running --server, or use a host without a graphical login manager."
+        fi
+    done
+    if [ "${dm_taken}" = true ]; then
+        return 1
+    fi
+
+    # Fedora Server boots multi-user.target by default — greetd is wanted by
+    # graphical.target, so without this the greeter never activates at boot and
+    # logind falls back to a tty login (live-test finding, 2026-10-23).
+    sudo systemctl set-default graphical.target \
+        || { log_error "Failed to set the default boot target to graphical."; return 1; }
+    log_success "Default boot target set to graphical."
+
+    # LUKS/btrfs hosts: at boot, plymouth holds the console during disk unlock and
+    # can starve greetd of VT 1 — greetd dies and logind falls back to a tty login
+    # (live-test finding on the encrypted Server VM). Order greetd after plymouth.
+    sudo mkdir -p /etc/systemd/system/greetd.service.d \
+        || { log_error "Failed to create the greetd drop-in directory."; return 1; }
+    printf '[Unit]\nAfter=plymouth-quit.service\n' \
+        | sudo tee /etc/systemd/system/greetd.service.d/10-pendora-plymouth-order.conf >/dev/null \
+        || { log_error "Failed to write the greetd plymouth-ordering drop-in."; return 1; }
+    sudo systemctl daemon-reload
+
+    if sudo systemctl enable --now greetd; then
+        # No getty@tty1 disable here: greetd's unit ships Conflicts=getty@tty1.service,
+        # so VT 1 hand-off is handled at runtime — and if greetd is ever stopped for
+        # maintenance, the getty fallback console keeps working (live-test finding:
+        # stopping greetd previously left a dead, untyped VT 1). Re-enable it for
+        # hosts already provisioned by older runs that disabled it.
+        sudo systemctl enable getty@tty1 2>/dev/null || true
+        log_success "greetd display manager enabled."
+    else
+        log_error "Failed to enable greetd."
+        return 1
+    fi
+}
+
+configure_boot_splash() {
+    # Set the Plymouth boot splash to the 'spinner' theme so the boot sequence
+    # hands off cleanly to the Noctalia greeter instead of console text.
+    # The theme package ships via pkg-lists/00-base.list (plymouth-theme-spinner).
+    echo
+    echo -e "${BOLD}Configuring Boot Splash (Plymouth spinner)${NC}"
+    echo "===================================================="
+
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] sudo plymouth-set-default-theme -R spinner"
+        return 0
+    fi
+
+    # -R regenerates the initramfs so the spinner theme is embedded for early boot.
+    sudo plymouth-set-default-theme -R spinner \
+        || { log_error "Failed to run plymouth-set-default-theme -R spinner."; return 1; }
+    local current_theme
+    current_theme="$(plymouth-set-default-theme 2>/dev/null || echo unknown)"
+    if [ "${current_theme}" = "spinner" ]; then
+        log_success "Plymouth boot splash set to spinner (initramfs regenerated)."
+    else
+        log_error "Plymouth theme query returned '${current_theme}' instead of spinner."
+        return 1
     fi
 }
 
@@ -538,6 +841,29 @@ deploy_sway_config() {
     echo -e "${BOLD}Deploying Sway & Noctalia Configuration (GNU Stow)${NC}"
     echo "===================================================="
     ensure_hack_nerd_font
+    # Pre-create the systemd user dir so stow descends into it instead of tree-folding
+    # ~/.config/systemd into a single symlink into the repo worktree, which would make
+    # later unit-file writes land inside the git tree (sway audit 2026-10-22, finding A4).
+    # Audit M6: unfold a legacy fold symlink first — hosts provisioned by older scripts
+    # may have ~/.config/systemd pointing into the repository.
+    # Audit M2: mirrored dry-run echo; dry runs must stay side-effect-free.
+    local target_user="${SUDO_USER:-$USER}"
+    local target_home
+    target_home="$(getent passwd "$target_user" 2>/dev/null | cut -d: -f6)"
+    [ -z "$target_home" ] && target_home="$HOME"
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] Unfold legacy ~/.config/systemd symlink if present"
+        echo "  [DRY-RUN] mkdir -p ${target_home}/.config/systemd/user (+chown ${target_user})"
+    else
+        if [ -L "${target_home}/.config/systemd" ]; then
+            rm "${target_home}/.config/systemd"
+            log_info "Unfolded legacy symlink ${target_home}/.config/systemd (previously pointed into the repository)."
+        fi
+        mkdir -p "${target_home}/.config/systemd/user"
+        if [ -n "${SUDO_USER:-}" ]; then
+            chown -h "${target_user}:${target_user}" "${target_home}/.config/systemd/user"
+        fi
+    fi
     stow_module "sway"
 
     log_info "Keyboard layout is applied at session start by apply-gnome-keyboard-layout.sh."
@@ -580,6 +906,37 @@ deploy_nvim_config() {
     fi
     stow_module "nvim"
 }
+
+deploy_btop_config() {
+    echo
+    echo -e "${BOLD}Deploying btop Configuration (GNU Stow)${NC}"
+    echo "===================================================="
+    if ! command -v btop &>/dev/null; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] sudo dnf install -y btop"
+        else
+            log_info "btop not found. Installing btop via dnf..."
+            sudo dnf install -y btop || true
+        fi
+    fi
+    stow_module "btop"
+}
+
+deploy_fastfetch_config() {
+    echo
+    echo -e "${BOLD}Deploying fastfetch Configuration (GNU Stow)${NC}"
+    echo "===================================================="
+    if ! command -v fastfetch &>/dev/null; then
+        if [ "$DRY_RUN" = true ]; then
+            echo "  [DRY-RUN] sudo dnf install -y fastfetch"
+        else
+            log_info "fastfetch not found. Installing fastfetch via dnf..."
+            sudo dnf install -y fastfetch || true
+        fi
+    fi
+    stow_module "fastfetch"
+}
+
 deploy_wallpaper() {
     echo
     echo -e "${BOLD}Deploying Pendora Desktop Wallpaper & User Profile Logo${NC}"
@@ -807,6 +1164,8 @@ while [[ $# -gt 0 ]]; do
             INSTALL_ZSH=true
             INSTALL_ALACRITTY=true
             INSTALL_NVIM=true
+            INSTALL_BTOP=true
+            INSTALL_FASTFETCH=true
             INSTALL_WALLPAPER=true
             SET_HOSTNAME=true
             INSTALL_SWAY=false
@@ -817,6 +1176,20 @@ while [[ $# -gt 0 ]]; do
             INSTALL_WALLPAPER=true
             INSTALL_ZSH=true
             INSTALL_NVIM=true
+            INSTALL_BTOP=true
+            INSTALL_FASTFETCH=true
+            INSTALL_ALACRITTY=true
+            SET_HOSTNAME=true
+            shift
+            ;;
+        -S|--server)
+            SERVER_MODE=true
+            INSTALL_SWAY=true
+            INSTALL_WALLPAPER=true
+            INSTALL_ZSH=true
+            INSTALL_NVIM=true
+            INSTALL_BTOP=true
+            INSTALL_FASTFETCH=true
             INSTALL_ALACRITTY=true
             SET_HOSTNAME=true
             shift
@@ -827,6 +1200,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         -N|--nvim|--neovim)
             INSTALL_NVIM=true
+            shift
+            ;;
+        -t|--btop)
+            INSTALL_BTOP=true
+            shift
+            ;;
+        -F|--fastfetch)
+            INSTALL_FASTFETCH=true
             shift
             ;;
         -B|--wallpaper)
@@ -849,6 +1230,8 @@ while [[ $# -gt 0 ]]; do
             INSTALL_SWAY=true
             INSTALL_ALACRITTY=true
             INSTALL_NVIM=true
+            INSTALL_BTOP=true
+            INSTALL_FASTFETCH=true
             INSTALL_WALLPAPER=true
             SET_HOSTNAME=true
             shift
@@ -868,6 +1251,13 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Mutually exclusive profiles: --basic excludes the sway stack (greetd, tuigreet)
+# that --server configures, which would abort phase 1 mid-run (audit H1).
+if [ "$SERVER_MODE" = true ] && [ "$RUN_BASIC" = true ]; then
+    log_error "--server and --basic are mutually exclusive: --basic excludes the Sway stack that --server configures."
+    exit 1
+fi
 
 check_distro
 check_non_root
@@ -1045,17 +1435,29 @@ if [ "$INSTALL_ALACRITTY" = true ]; then
     deploy_alacritty_config
 fi
 
-# Run Docker containers section if requested
-if [ "$INSTALL_DOCKER_CONTAINERS" = true ]; then
-    run_containers_install
-fi
-
 # Deploy Neovim configuration if requested
 if [ "$INSTALL_NVIM" = true ]; then
     deploy_nvim_config
 fi
 
+# Deploy btop configuration if requested
+if [ "$INSTALL_BTOP" = true ]; then
+    deploy_btop_config
+fi
+
+# Deploy fastfetch configuration if requested
+if [ "$INSTALL_FASTFETCH" = true ]; then
+    deploy_fastfetch_config
+fi
+
+# Run Docker containers section if requested
+if [ "$INSTALL_DOCKER_CONTAINERS" = true ]; then
+    run_containers_install
+fi
+
 # Deploy wallpaper if requested
+# (before server-login configuration: a late failure must never leave the sway
+#  session without its wallpaper — live-test finding, 2026-10-23)
 if [ "$INSTALL_WALLPAPER" = true ]; then
     deploy_wallpaper
 fi
@@ -1065,10 +1467,23 @@ if [ "$SET_HOSTNAME" = true ]; then
     set_system_hostname
 fi
 
+# Configure display manager & VM guest integration for the --server profile (phase 1)
+# Degraded on purpose: a server-login failure must not strip the wallpaper, hostname,
+# or alacritty/nvim deployments that already succeeded (live-test finding, 2026-10-23).
+if [ "$SERVER_MODE" = true ]; then
+    configure_boot_splash || log_warn "Boot splash configuration failed — continuing without it."
+    configure_server_login \
+        || log_warn "Server login configuration failed — a greeter may be missing. Check the [ERROR] lines above and re-run './install.sh --server' (idempotent)."
+fi
+
 log_success "Pendora execution completed!"
 
+if [ "$SERVER_MODE" = true ]; then
+    log_success "Server phase (1/2) complete. Reboot, log in via the Noctalia greeter, then run './install.sh --all' for pentest tools (phase 2/2)."
+fi
+
 # Do not prompt for reboot if only wallpaper & profile logo was deployed
-if [ "$INSTALL_WALLPAPER" = true ] && [ "$RUN_ALL" = false ] && [ "$RUN_BASIC" = false ] && [ "$RUN_PACKAGES" = false ] && [ "$INSTALL_PIPX" = false ] && [ "$INSTALL_UPSTREAMS" = false ] && [ "$INSTALL_ZSH" = false ] && [ "$INSTALL_SWAY" = false ] && [ "$INSTALL_ALACRITTY" = false ] && [ "$INSTALL_NVIM" = false ] && [ "$INSTALL_DOCKER_CONTAINERS" = false ] && [ "$SET_HOSTNAME" = false ]; then
+if [ "$INSTALL_WALLPAPER" = true ] && [ "$RUN_ALL" = false ] && [ "$RUN_BASIC" = false ] && [ "$RUN_PACKAGES" = false ] && [ "$INSTALL_PIPX" = false ] && [ "$INSTALL_UPSTREAMS" = false ] && [ "$INSTALL_ZSH" = false ] && [ "$INSTALL_SWAY" = false ] && [ "$INSTALL_ALACRITTY" = false ] && [ "$INSTALL_NVIM" = false ] && [ "$INSTALL_DOCKER_CONTAINERS" = false ] && [ "$INSTALL_FASTFETCH" = false ] && [ "$SET_HOSTNAME" = false ]; then
     REBOOT=false
 fi
 
