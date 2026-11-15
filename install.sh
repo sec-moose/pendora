@@ -511,16 +511,49 @@ stow_module() {
 ensure_hack_nerd_font() {
     local font_dir="/usr/local/share/fonts/HackNerdFont"
     if [ ! -d "$font_dir" ] || [ -z "$(ls -A "$font_dir" 2>/dev/null)" ]; then
+        # SEC-03: pinned release URL + sha256 verification, no stream-to-root pipe.
+        local font_url="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/Hack.tar.xz"
+        local expected_hash="cdd389472e10e2261520140ff1b382b4f8a226af5fd0b2735b975d31151d9c3c"
         if [ "$DRY_RUN" = true ]; then
-            echo "  [DRY-RUN] Install Hack Nerd Font to $font_dir"
+            echo "  [DRY-RUN] Download Hack Nerd Font from $font_url"
+            echo "  [DRY-RUN] Verify sha256: $expected_hash"
+            echo "  [DRY-RUN] Extract to $font_dir and run: sudo fc-cache -f"
             return 0
         fi
-        log_info "Hack Nerd Font not found. Installing from upstream release..."
-        local font_url="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.tar.xz"
+        local manifest="${SCRIPT_DIR}/upstreams/checksums.sha256"
+        if [ -f "$manifest" ]; then
+            local manifest_hash
+            manifest_hash="$(awk -v name="Hack.tar.xz" '!/^#/ && $2 == name {print $1}' "$manifest" 2>/dev/null || true)"
+            if [ -n "$manifest_hash" ]; then
+                expected_hash="$manifest_hash"
+            fi
+        else
+            log_warn "Checksum manifest not found at $manifest; skipping Hack Nerd Font install."
+            return 0
+        fi
+        log_info "Hack Nerd Font not found. Installing from pinned upstream release..."
+        local tmp_dir
+        tmp_dir="$(mktemp -d -m 0700)" || { log_error "Failed to create temp dir for font download."; return 1; }
+        local tmp_file="${tmp_dir}/Hack.tar.xz"
+        if ! curl -fsSL "$font_url" -o "$tmp_file"; then
+            log_error "Failed to download Hack Nerd Font from $font_url"
+            rm -rf "$tmp_dir"
+            return 1
+        fi
+        if ! printf '%s  %s\n' "$expected_hash" "$tmp_file" | sha256sum -c --status; then
+            log_error "Checksum mismatch for Hack Nerd Font archive; refusing to install."
+            rm -rf "$tmp_dir"
+            return 1
+        fi
         sudo mkdir -p "$font_dir"
-        curl -fsSL "$font_url" | sudo tar -xJ -C "$font_dir" 2>/dev/null || true
-        sudo fc-cache -f 2>/dev/null || true
-        log_success "Hack Nerd Font installed to $font_dir"
+        if ! sudo tar -xJf "$tmp_file" -C "$font_dir"; then
+            log_error "Failed to extract Hack Nerd Font to $font_dir"
+            rm -rf "$tmp_dir"
+            return 1
+        fi
+        rm -rf "$tmp_dir"
+        sudo fc-cache -f
+        log_success "Hack Nerd Font installed to $font_dir (sha256 verified)."
     fi
 }
 

@@ -1,0 +1,31 @@
+# Pendora upstream artifact checksums — coreutils sha256sum -c format.
+# Policy: rotate the pinned URL and the hash in the SAME commit.
+# Sources: vendor checksum pages where published; otherwise recorded once at
+# pin time (TOFU) — noted per entry. Diff vendor scripts before rotating.
+
+# Hack Nerd Font v3.5.1 (2026-08-21) — independent sum: Homebrew cask font-hack-nerd-font
+cdd389472e10e2261520140ff1b382b4f8a226af5fd0b2735b975d31151d9c3c  Hack.tar.xz
+
+# Naabu v2.7.0 (2026-10-28) — vendor sum: naabu-checksums.txt @ v2.7.0
+0cc77c0ca32d2f519ffbaa7665bb0e7c88c40753ab22f03551d453a1a823e9f0  naabu_2.7.0_linux_amd64.zip
+
+# Burp Suite Community 2026.10.1 (2026-10-26) — vendor sum: portswigger.net downloads page, Linux (x64) flavor
+77ab3568ce83a993362be7c6bd0726e612a7af36e0ad323d6995c9e65d714936  burpsuite-community-2026.10.1-linux
+
+# Microsoft Dev Tunnels CLI 1.0.2115+e16833f284 — independent sums: Homebrew cask devtunnel + AUR devtunnel-cli-bin (identical)
+723d6aebdc226064aef321258fb17c8a2770c9cc2bd05004c0fb83e72b302c3f  devtunnel-linux-x64
+
+# RustScan 2.4.1 (2025-02-23) — recorded at pin time (no vendor checksums)
+f3a4365d939e3b81f25ba8c37852ce9ac9e938c3cc882c5b3e6fff6152c740be  x86_64-linux-rustscan.tar.gz.zip
+
+# linPEAS 20261115-ba4890df (2026-11-15) — recorded at pin time (no vendor checksums)
+d5a7a9a36d2d4966bdebfa007fa80afc64c4c6f55c6eecb39fd997d6f4d427bb  linpeas.sh
+
+# winPEAS 20261115-ba4890df (2026-11-15) — recorded at pin time (no vendor checksums)
+6166ff3d37b741c259b6b235d1888e3d250ec12619c0f57cb0bd0a2f74ace74e  winPEASany.exe
+
+# Metasploit omnibus wrapper (vendored copy, captured from commit 45946ec8c2620d7f9c97d4d5ef3f30a201c48677 on 2026-11-15)
+d12fea4d1339ebecb09d8cc36920d9f5e5e7e9fffbe092b1e1cd09255cc16825  msfinstall.erb
+
+# SysReptor installer snapshot (docs.sysreptor.com/install.sh, captured 2026-11-15) — diff before rotating
+14c858f40ea37bc4f23a1b94fccffa51ecb309cdb2680305c4049bb41c346bc2  sysreptor-install.sh

@@ -9,6 +9,9 @@ set -euo pipefail
 DRY_RUN=false
 ASSUME_YES=false
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHECKSUMS_FILE="${SCRIPT_DIR}/checksums.sha256"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -30,6 +33,47 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $*" >&2
+}
+
+# SEC-xx: fetch a pinned artifact and fail closed on checksum mismatch.
+# Usage: fetch_and_verify <url> <name> <dest> — <name> must be keyed in checksums.sha256.
+fetch_and_verify() {
+    local url="$1" name="$2" dest="$3"
+    if [ ! -f "$CHECKSUMS_FILE" ]; then
+        log_error "Checksum manifest missing: $CHECKSUMS_FILE"
+        return 1
+    fi
+    local hash
+    hash=$(awk -v n="$name" '$2 == n { print $1; exit }' "$CHECKSUMS_FILE")
+    if ! [[ "$hash" =~ ^[0-9a-f]{64}$ ]]; then
+        log_error "No checksum pin found for $name in $CHECKSUMS_FILE"
+        return 1
+    fi
+    if [ "$DRY_RUN" = true ]; then
+        echo "  [DRY-RUN] curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors '$url' -o <staging>/$name"
+        echo "  [DRY-RUN] printf '%s  %s' \"$hash\" \"$name\" | (cd <staging> && sha256sum -c --status -)"
+        return 0
+    fi
+    local staging
+    staging="$(mktemp -d -m 0700)" || { log_error "Could not create a staging directory for $name."; return 1; }
+    # SEC-xx: guarded curl so set -e does not abort mid-download
+    if ! curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "$staging/$name" "$url"; then
+        log_error "Download failed for $name from $url."
+        rm -rf "$staging"
+        return 1
+    fi
+    if ! printf '%s  %s\n' "$hash" "$name" | (cd "$staging" && sha256sum -c --status -); then
+        log_error "Checksum verification FAILED for $name (expected $hash); refusing to install."
+        rm -rf "$staging"
+        return 1
+    fi
+    if ! mv "$staging/$name" "$dest"; then
+        log_error "Could not move verified $name into place at $dest."
+        rm -rf "$staging"
+        return 1
+    fi
+    rm -rf "$staging"
+    log_success "$name verified against checksums.sha256 and fetched."
 }
 
 show_help() {
@@ -71,28 +115,65 @@ install_metasploit() {
     log_info "Installing Metasploit Framework via Rapid7 omnibus installer..."
     local tmp_dir
     tmp_dir="$(mktemp -d)"
-    local cmd="curl -fsSL https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb -o '$tmp_dir/msfinstall' && chmod 755 '$tmp_dir/msfinstall' && sudo '$tmp_dir/msfinstall'; rc=\$?; rm -rf '$tmp_dir'; exit \$rc"
+    # SEC-xx: the omnibus wrapper is vendored (upstreams/vendor/msfinstall.erb, captured from
+    # rapid7/metasploit-omnibus commit 45946ec8c2620d7f9c97d4d5ef3f30a201c48677, 2025-06-23) and
+    # hash-pinned in checksums.sha256 as msfinstall.erb - no network fetch of the wrapper itself.
+    # The framework packages it installs remain Rapid7-GPG-signed.
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] $cmd"
+        echo "  [DRY-RUN] cp '$SCRIPT_DIR/vendor/msfinstall.erb' '$tmp_dir/msfinstall' && chmod 755 '$tmp_dir/msfinstall'"
+        echo "  [DRY-RUN] sudo sh '$tmp_dir/msfinstall'"
     else
-        bash -c "$cmd"
+        if ! cp "$SCRIPT_DIR/vendor/msfinstall.erb" "$tmp_dir/msfinstall"; then
+            log_error "Vendored msfinstall.erb not found at $SCRIPT_DIR/vendor/msfinstall.erb."
+            rm -rf "$tmp_dir"
+            return 1
+        fi
+        chmod 755 "$tmp_dir/msfinstall"
+        # SEC-xx: fail closed if the vendored wrapper no longer matches its pinned hash
+        local msf_hash
+        msf_hash=$(awk '$2 == "msfinstall.erb" { print $1; exit }' "$CHECKSUMS_FILE" 2>/dev/null)
+        if ! [[ "$msf_hash" =~ ^[0-9a-f]{64}$ ]] || \
+           ! (cd "$tmp_dir" && printf '%s  msfinstall\n' "$msf_hash" | sha256sum -c --status -); then
+            log_error "Vendored msfinstall.erb does not match its checksums.sha256 pin; refusing to run it."
+            rm -rf "$tmp_dir"
+            return 1
+        fi
+        # SEC-xx: guarded so the wrapper's rc is reported and tmp_dir is always cleaned up
+        local rc=0
+        sudo sh "$tmp_dir/msfinstall" || rc=$?
+        rm -rf "$tmp_dir"
+        if [ "$rc" -ne 0 ]; then
+            log_error "Metasploit omnibus installer exited with status ${rc}."
+            return 1
+        fi
         log_success "Metasploit installed successfully."
     fi
 }
 
 install_burpsuite() {
     log_info "Downloading Burp Suite Community Edition installer..."
-    local installer_url="https://portswigger.net/burp/releases/download?product=community&type=linux"
+    local installer_url="https://portswigger.net/burp/releases/download?product=community&version=2026.10.1&type=linux"
     local dest
     dest="$(mktemp)"
     local varfile
     varfile="$(mktemp)"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] curl -fsSL '$installer_url' -o '$dest' && chmod +x '$dest'"
+        echo "  [DRY-RUN] Verify sha256 of '$dest' against checksums.sha256 (burpsuite-community-2026.10.1-linux)"
         echo "  [DRY-RUN] sudo '$dest' -q -dir /opt/BurpSuiteCommunity -overwrite -varfile '$varfile'"
         echo "  [DRY-RUN] sudo ln -sf /opt/BurpSuiteCommunity/BurpSuiteCommunity /usr/local/bin/burpsuite"
     else
         curl -fsSL "$installer_url" -o "$dest"
+        # SEC-xx: fail closed on checksum mismatch before executing the downloaded installer
+        local burp_hash
+        burp_hash=$(awk '$2 == "burpsuite-community-2026.10.1-linux" { print $1; exit }' "$CHECKSUMS_FILE" 2>/dev/null)
+        local actual_hash
+        actual_hash="$(sha256sum "$dest" | awk '{print $1}')" || actual_hash=""
+        if ! [[ "$burp_hash" =~ ^[0-9a-f]{64}$ ]] || [ "$actual_hash" != "$burp_hash" ]; then
+            log_error "Burp Suite installer failed checksum verification (expected ${burp_hash:-none}, got $actual_hash); refusing to execute it."
+            rm -f "$dest" "$varfile"
+            return 1
+        fi
         if head -n 1 "$dest" | grep -q "^<"; then
             log_error "PortSwigger returned an HTML error page instead of installer script."
             return 1
@@ -151,7 +232,7 @@ install_seclists() {
 install_evil_winrm() {
     log_info "Installing Evil-WinRM via RubyGem..."
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] sudo gem install evil-winrm"
+        echo "  [DRY-RUN] sudo gem install evil-winrm -v 4.1"
     else
         if ! command -v gem &>/dev/null; then
             log_error "gem command not found. Ensure ruby, rubygems, ruby-devel, and readline-devel are installed."
@@ -162,7 +243,8 @@ install_evil_winrm() {
             log_info "Installing missing ruby-devel, readline-devel, and redhat-rpm-config for native gem compilation..."
             sudo dnf install -y ruby-devel readline-devel redhat-rpm-config
         fi
-        sudo gem install evil-winrm
+        # SEC-xx: pin the gem version for reproducible installs
+        sudo gem install evil-winrm -v 4.1
         log_success "Evil-WinRM installed."
     fi
 }
@@ -201,15 +283,29 @@ EOF
 }
 install_hack_font() {
     log_info "Installing Hack Nerd Font from upstream Nerd Fonts release..."
-    local font_url="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.tar.xz"
+    # SEC-xx: pinned release v3.5.1, checksum-verified via fetch_and_verify (no curl|tar pipe)
+    local font_url="https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/Hack.tar.xz"
     local font_dir="/usr/local/share/fonts/HackNerdFont"
     if [ "$DRY_RUN" = true ]; then
+        fetch_and_verify "$font_url" "Hack.tar.xz" "<mktemp file>" || log_warn "Hack.tar.xz could not be verified (missing manifest/pin)."
         echo "  [DRY-RUN] sudo mkdir -p '$font_dir'"
-        echo "  [DRY-RUN] curl -fsSL '$font_url' | sudo tar -xJ -C '$font_dir'"
+        echo "  [DRY-RUN] sudo tar -xJf <verified Hack.tar.xz> -C '$font_dir'"
         echo "  [DRY-RUN] sudo fc-cache -f"
     else
+        local font_tmp
+        font_tmp="$(mktemp)" || { log_error "Could not create a temp file for Hack.tar.xz."; return 1; }
+        if ! fetch_and_verify "$font_url" "Hack.tar.xz" "$font_tmp"; then
+            rm -f "$font_tmp"
+            log_warn "Hack Nerd Font download or verification failed; not installing."
+            return 1
+        fi
         sudo mkdir -p "$font_dir"
-        curl -fsSL "$font_url" | sudo tar -xJ -C "$font_dir"
+        if ! sudo tar -xJf "$font_tmp" -C "$font_dir"; then
+            log_warn "Extraction of Hack Nerd Font failed; not completing installation."
+            rm -f "$font_tmp"
+            return 1
+        fi
+        rm -f "$font_tmp"
         sudo fc-cache -f
         log_success "Hack Nerd Font installed to $font_dir"
     fi
@@ -436,6 +532,7 @@ install_sysreptor() {
     installer_script="$(mktemp)"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] Existing stack: start via compose (/opt/sysreptor/sysreptor/deploy); fresh: download + run official installer unattended"
+        echo "  [DRY-RUN] Verify installer against checksums.sha256 (sysreptor-install.sh); download + verify pinned setup.tar.gz (2026.102) and point the installer at it via file://"
         echo "  [DRY-RUN] Strip restart policies (no auto-start after reboot) and set containers to restart=no"
         echo "  [DRY-RUN] Reset the reptor password to a fresh generated value (docker compose exec app manage.py shell)"
         echo "  [DRY-RUN] Display credentials banner and prompt user to copy before continuing"
@@ -466,6 +563,41 @@ install_sysreptor() {
             sudo mkdir -p "$install_dir"
             log_info "Downloading official SysReptor installer..."
             curl -fsSL https://docs.sysreptor.com/install.sh -o "$installer_script"
+            # SEC-xx: fail closed if the fetched installer no longer matches the manifest snapshot
+            local sr_installer_hash
+            sr_installer_hash=$(awk '$2 == "sysreptor-install.sh" { print $1; exit }' "$CHECKSUMS_FILE" 2>/dev/null)
+            local sr_installer_actual
+            sr_installer_actual="$(sha256sum "$installer_script" | awk '{print $1}')" || sr_installer_actual=""
+            if ! [[ "$sr_installer_hash" =~ ^[0-9a-f]{64}$ ]] || [ "$sr_installer_actual" != "$sr_installer_hash" ]; then
+                log_error "SysReptor installer failed checksum verification against checksums.sha256 (sysreptor-install.sh); refusing to continue."
+                rm -f "$installer_script"
+                return 0
+            fi
+            # SEC-xx: pre-download the setup bundle from a pinned release and verify it, so the
+            # installer consumes a known-good tarball via file:// instead of an unpinned latest URL
+            log_info "Downloading pinned SysReptor setup bundle (2026.102)..."
+            if ! curl -fsSL --retry 3 \
+                https://github.com/Syslifters/sysreptor/releases/download/2026.102/setup.tar.gz \
+                -o "$install_dir/setup.tar.gz"; then
+                log_error "Could not download the pinned SysReptor setup bundle; skipping SysReptor deployment."
+                rm -f "$installer_script"
+                return 0
+            fi
+            local sr_bundle_actual
+            sr_bundle_actual="$(sha256sum "$install_dir/setup.tar.gz" | awk '{print $1}')" || sr_bundle_actual=""
+            if [ "$sr_bundle_actual" != "fc7f4b3c0856930ca294a968132f44cbe5530421232511863b7916c33dfba2f7" ]; then
+                log_error "SysReptor setup.tar.gz failed checksum verification; refusing to continue."
+                rm -f "$install_dir/setup.tar.gz" "$installer_script"
+                return 0
+            fi
+            # Point the installer at the verified local bundle (it runs with cwd=$install_dir).
+            # Expand the path here - $install_dir is not defined inside the installer's shell.
+            sed -i "s|download_url=https://github.com/syslifters/sysreptor/releases/latest/download/setup.tar.gz|download_url=\"file://${install_dir}/setup.tar.gz\"|g" "$installer_script"
+            if ! grep -q 'download_url="file://' "$installer_script"; then
+                log_error "Could not redirect the SysReptor installer to the verified local setup bundle; refusing to continue."
+                rm -f "$install_dir/setup.tar.gz" "$installer_script"
+                return 0
+            fi
             chmod +x "$installer_script"
 
             # Neutralize all interactive read prompts with automated responses to avoid infinite while-loops
@@ -592,8 +724,9 @@ install_bloodhound() {
         sudo mkdir -p "$install_dir"
         if [ ! -f "$install_dir/docker-compose.yml" ]; then
             log_info "Downloading official BloodHound CE docker-compose.yml to $install_dir..."
+            # SEC-xx: pin the compose file to release tag v9.9.2 instead of the moving main branch
             sudo curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o "$install_dir/docker-compose.yml" \
-                https://raw.githubusercontent.com/SpecterOps/BloodHound/main/examples/docker-compose/docker-compose.yml \
+                https://raw.githubusercontent.com/SpecterOps/BloodHound/v9.9.2/examples/docker-compose/docker-compose.yml \
                 || { log_error "Could not download the BloodHound CE compose file; skipping BloodHound CE deployment."; return 0; }
         fi
 
@@ -731,14 +864,32 @@ EOF
 install_devtunnel() {
     log_info "Installing Microsoft Dev Tunnels CLI (devtunnel)..."
     local dest="/usr/local/bin/devtunnel"
-    local download_url="https://aka.ms/TunnelsCliDownload/linux-x64"
+    # SEC-xx: pin the versioned CLI asset instead of the aka.ms latest redirect
+    local download_url="https://tunnelsassetsprod.blob.core.windows.net/cli/1.0.2115+e16833f284/linux-x64-devtunnel"
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] curl -fL --progress-bar '$download_url' -o <mktemp dir>/devtunnel && sudo install -m 755 <tmp>/devtunnel '$dest'"
+        echo "  [DRY-RUN] curl -fL --progress-bar '$download_url' -o <mktemp dir>/devtunnel"
+        echo "  [DRY-RUN] Verify sha256 against checksums.sha256 (devtunnel-linux-x64)"
+        echo "  [DRY-RUN] sudo install -m 755 <tmp>/devtunnel '$dest'"
     else
         log_info "Downloading devtunnel binary (~60 MB)..."
         local tmp_dir
         tmp_dir="$(mktemp -d)"
-        curl -fsSL --progress-bar "$download_url" -o "$tmp_dir/devtunnel"
+        # SEC-xx: guarded curl so a download failure cleans up tmp_dir instead of aborting under set -e
+        if ! curl -fsSL --progress-bar "$download_url" -o "$tmp_dir/devtunnel"; then
+            log_error "Download failed for devtunnel from $download_url."
+            rm -rf "$tmp_dir"
+            return 1
+        fi
+        # SEC-xx: fail closed on checksum mismatch before installing the binary
+        local dt_hash
+        dt_hash=$(awk '$2 == "devtunnel-linux-x64" { print $1; exit }' "$CHECKSUMS_FILE" 2>/dev/null)
+        local dt_actual
+        dt_actual="$(sha256sum "$tmp_dir/devtunnel" | awk '{print $1}')" || dt_actual=""
+        if ! [[ "$dt_hash" =~ ^[0-9a-f]{64}$ ]] || [ "$dt_actual" != "$dt_hash" ]; then
+            log_error "devtunnel failed checksum verification (expected ${dt_hash:-none}, got $dt_actual); refusing to install."
+            rm -rf "$tmp_dir"
+            return 1
+        fi
         sudo install -m 755 "$tmp_dir/devtunnel" "$dest"
         rm -rf "$tmp_dir"
         log_success "Microsoft Dev Tunnels installed to $dest"
@@ -785,13 +936,23 @@ install_rustscan() {
     local download_url="https://github.com/bee-san/RustScan/releases/download/2.4.1/x86_64-linux-rustscan.tar.gz.zip"
     local temp_dir
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] stage in a private mktemp -d directory: curl -fsSL '$download_url' -o rustscan.zip; unzip; tar -xzf"
+        echo "  [DRY-RUN] stage in a private mktemp -d directory: curl -fsSL '$download_url' -o rustscan.zip; verify sha256 (x86_64-linux-rustscan.tar.gz.zip); unzip; tar -xzf"
         echo "  [DRY-RUN] sudo install -m 755 rustscan '$dest'"
     else
         temp_dir="$(mktemp -d)"
         trap 'rm -rf "$temp_dir"' EXIT
         log_info "Downloading RustScan release archive..."
         curl -fsSL "$download_url" -o "$temp_dir/rustscan.zip"
+        # SEC-xx: fail closed on checksum mismatch before extracting the archive
+        local rs_hash
+        rs_hash=$(awk '$2 == "x86_64-linux-rustscan.tar.gz.zip" { print $1; exit }' "$CHECKSUMS_FILE" 2>/dev/null)
+        local rs_actual
+        rs_actual="$(sha256sum "$temp_dir/rustscan.zip" | awk '{print $1}')" || rs_actual=""
+        if ! [[ "$rs_hash" =~ ^[0-9a-f]{64}$ ]] || [ "$rs_actual" != "$rs_hash" ]; then
+            log_error "RustScan archive failed checksum verification (expected ${rs_hash:-none}, got $rs_actual); refusing to install."
+            rm -rf "$temp_dir"
+            return 1
+        fi
         unzip -q -o "$temp_dir/rustscan.zip" -d "$temp_dir"
         tar -xzf "$temp_dir/x86_64-linux-rustscan.tar.gz" -C "$temp_dir"
         sudo install -m 755 "$temp_dir/rustscan" "$dest"
@@ -804,16 +965,26 @@ install_rustscan() {
 install_naabu() {
     log_info "Installing Naabu fast port scanner (ProjectDiscovery)..."
     local dest="/usr/local/bin/naabu"
-    local download_url="https://github.com/projectdiscovery/naabu/releases/download/v2.6.1/naabu_2.6.1_linux_amd64.zip"
+    local download_url="https://github.com/projectdiscovery/naabu/releases/download/v2.7.0/naabu_2.7.0_linux_amd64.zip"
     local temp_dir
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] stage in a private mktemp -d directory: curl -fsSL '$download_url' -o naabu.zip; unzip naabu"
+        echo "  [DRY-RUN] stage in a private mktemp -d directory: curl -fsSL '$download_url' -o naabu.zip; verify sha256 (naabu_2.7.0_linux_amd64.zip); unzip naabu"
         echo "  [DRY-RUN] sudo install -m 755 naabu '$dest'"
     else
         temp_dir="$(mktemp -d)"
         trap 'rm -rf "$temp_dir"' EXIT
         log_info "Downloading Naabu release archive..."
         curl -fsSL "$download_url" -o "$temp_dir/naabu.zip"
+        # SEC-xx: fail closed on checksum mismatch before extracting the archive
+        local nb_hash
+        nb_hash=$(awk '$2 == "naabu_2.7.0_linux_amd64.zip" { print $1; exit }' "$CHECKSUMS_FILE" 2>/dev/null)
+        local nb_actual
+        nb_actual="$(sha256sum "$temp_dir/naabu.zip" | awk '{print $1}')" || nb_actual=""
+        if ! [[ "$nb_hash" =~ ^[0-9a-f]{64}$ ]] || [ "$nb_actual" != "$nb_hash" ]; then
+            log_error "Naabu archive failed checksum verification (expected ${nb_hash:-none}, got $nb_actual); refusing to install."
+            rm -rf "$temp_dir"
+            return 1
+        fi
         unzip -q -o "$temp_dir/naabu.zip" naabu -d "$temp_dir"
         sudo install -m 755 "$temp_dir/naabu" "$dest"
         rm -rf "$temp_dir"
@@ -825,9 +996,9 @@ install_naabu() {
 install_linpeas() {
     log_info "Installing linPEAS Linux privilege escalation scanner (PEASS-ng)..."
     local dest="/usr/local/bin/linpeas"
-    local download_url="https://github.com/PEASS-ng/PEASS-ng/releases/download/20261027-87d1fe16/linpeas.sh"
+    local download_url="https://github.com/PEASS-ng/PEASS-ng/releases/download/20261115-ba4890df/linpeas.sh"
     if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY-RUN] curl -fsSL '$download_url' -o linpeas.sh"
+        echo "  [DRY-RUN] curl -fsSL '$download_url' -o linpeas.sh; verify sha256 (linpeas.sh)"
         echo "  [DRY-RUN] sudo install -m 755 linpeas.sh '$dest'"
     else
         local temp_dir
@@ -835,6 +1006,16 @@ install_linpeas() {
         trap 'rm -rf "$temp_dir"' EXIT
         log_info "Downloading linpeas.sh release script..."
         curl -fsSL "$download_url" -o "$temp_dir/linpeas.sh"
+        # SEC-xx: fail closed on checksum mismatch before installing the script
+        local lp_hash
+        lp_hash=$(awk '$2 == "linpeas.sh" { print $1; exit }' "$CHECKSUMS_FILE" 2>/dev/null)
+        local lp_actual
+        lp_actual="$(sha256sum "$temp_dir/linpeas.sh" | awk '{print $1}')" || lp_actual=""
+        if ! [[ "$lp_hash" =~ ^[0-9a-f]{64}$ ]] || [ "$lp_actual" != "$lp_hash" ]; then
+            log_error "linpeas.sh failed checksum verification (expected ${lp_hash:-none}, got $lp_actual); refusing to install."
+            rm -rf "$temp_dir"
+            return 1
+        fi
         sudo install -m 755 "$temp_dir/linpeas.sh" "$dest"
         rm -rf "$temp_dir"
         trap - EXIT
@@ -845,10 +1026,10 @@ install_linpeas() {
 install_winpeas() {
     log_info "Installing winPEAS Windows privilege escalation binaries (PEASS-ng)..."
     local dest_dir="/usr/local/share/peass"
-    local download_url="https://github.com/PEASS-ng/PEASS-ng/releases/download/20261027-87d1fe16/winPEASany.exe"
+    local download_url="https://github.com/PEASS-ng/PEASS-ng/releases/download/20261115-ba4890df/winPEASany.exe"
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] sudo mkdir -p '$dest_dir'"
-        echo "  [DRY-RUN] curl -fsSL '$download_url' -o winPEASany.exe"
+        echo "  [DRY-RUN] curl -fsSL '$download_url' -o winPEASany.exe; verify sha256 (winPEASany.exe)"
         echo "  [DRY-RUN] sudo install -m 644 winPEASany.exe '$dest_dir/winPEASany.exe'"
     else
         local temp_dir
@@ -857,6 +1038,16 @@ install_winpeas() {
         sudo mkdir -p "$dest_dir"
         log_info "Downloading winPEASany.exe release binary..."
         curl -fsSL "$download_url" -o "$temp_dir/winPEASany.exe"
+        # SEC-xx: fail closed on checksum mismatch before installing the binary
+        local wp_hash
+        wp_hash=$(awk '$2 == "winPEASany.exe" { print $1; exit }' "$CHECKSUMS_FILE" 2>/dev/null)
+        local wp_actual
+        wp_actual="$(sha256sum "$temp_dir/winPEASany.exe" | awk '{print $1}')" || wp_actual=""
+        if ! [[ "$wp_hash" =~ ^[0-9a-f]{64}$ ]] || [ "$wp_actual" != "$wp_hash" ]; then
+            log_error "winPEASany.exe failed checksum verification (expected ${wp_hash:-none}, got $wp_actual); refusing to install."
+            rm -rf "$temp_dir"
+            return 1
+        fi
         sudo install -m 644 "$temp_dir/winPEASany.exe" "$dest_dir/winPEASany.exe"
         rm -rf "$temp_dir"
         trap - EXIT
@@ -874,7 +1065,7 @@ install_winpeas() {
 install_kerbrute() {
     log_info "Installing Kerbrute Kerberos username enumeration tool (Go build)..."
     local dest="/usr/local/bin/kerbrute"
-    local module="github.com/ropnop/kerbrute@latest"
+    local module="github.com/ropnop/kerbrute@v1.0.3" # SEC-xx: pin the module version instead of @latest
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY-RUN] Ensure the Go toolchain (golang, pkg-lists/00-base.list): sudo dnf install -y golang"
         echo "  [DRY-RUN] GOBIN=<mktemp dir> go install -ldflags '-s -w' $module"
